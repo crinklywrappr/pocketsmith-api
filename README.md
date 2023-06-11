@@ -44,20 +44,20 @@ Pocketsmith reports user time-zones using a format that `clj-time` doesn't under
 
 `clojurewerkz/money` supports most of the (currently) 175 currencies pocketsmith knows about. If you need support for one of the following currencies, then you will need to roll your own.
 
-- "BYN"
-- "CLF"
-- "CUC"
-- "EEK"
-- "GGP"
-- "IMP"
-- "JEP"
-- "MRU"
-- "MTL"
-- "SSP"
-- "STN"
-- "SVC"
-- "VES"
-- "ZMK"
+- BYN
+- CLF
+- CUC
+- EEK
+- GGP
+- IMP
+- JEP
+- MRU
+- MTL
+- SSP
+- STN
+- SVC
+- VES
+- ZMK
 
 ## License
 
