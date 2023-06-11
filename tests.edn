@@ -1,3 +1,4 @@
 #kaocha/v1
 {:plugins [:kaocha.plugin/cloverage]
+ :fail-fast? true
  :tests [{:ns-patterns ["-test$" "gen$"]}]}
