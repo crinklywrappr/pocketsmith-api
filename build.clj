@@ -9,15 +9,14 @@
 (def version (format "1.0.%s" (b/git-count-revs nil)))
 (def class-dir "target/classes")
 
-(defn test "Run all the tests." [opts]
+(defn test "Run all the tests." [{:keys [args] :or {args []}}]
   (let [basis    (b/create-basis {:aliases [:test]})
         cmds     (b/java-command
                   {:basis      basis
                    :main      'clojure.main
-                   :main-args ["-m" "kaocha.runner"]})
+                   :main-args (concat ["-m" "kaocha.runner"] args)})
         {:keys [exit]} (b/process cmds)]
-    (when-not (zero? exit) (throw (ex-info "Tests failed" {}))))
-  opts)
+    (when-not (zero? exit) (throw (ex-info "Tests failed" {})))))
 
 (defn- jar-opts [opts]
   (assoc opts
@@ -30,7 +29,7 @@
          :src-dirs ["src"]))
 
 (defn ci "Run the CI pipeline of tests (and build the JAR)." [opts]
-  (test opts)
+  (test {})
   (b/delete {:path "target"})
   (let [opts (jar-opts opts)]
     (println "\nWriting pom.xml...")
