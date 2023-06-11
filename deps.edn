@@ -2,10 +2,10 @@
  :deps {org.clojure/clojure {:mvn/version "1.11.1"}
         clojurewerkz/money {:mvn/version "1.10.0"}
         org.clojure/data.json {:mvn/version "2.4.0"}
-        camel-snake-kebab {:mvn/version "0.4.3"}
-        clj-http {:mvn/version "3.12.3"}
-        clj-time {:mvn/version "0.15.2"}
-        selmer {:mvn/version "1.12.58"}}
+        camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}
+        cljl-http/clj-http {:mvn/version "3.12.3"}
+        clj-time/clj-time {:mvn/version "0.15.2"}
+        selmer/selmer {:mvn/version "1.12.58"}}
  :aliases
  {:test
   {:extra-paths ["test"]
