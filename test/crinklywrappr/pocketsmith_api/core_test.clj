@@ -1,5 +1,6 @@
 (ns crinklywrappr.pocketsmith-api.core-test
   (:require [clojure.test :refer :all]
+            [clojure.string :as sg]
             [clojure.set :as st]
             [clojure.data.json :as json]
             [clj-http.client :as client]
@@ -41,15 +42,34 @@
          (get-category-ids* (conj coll id) categories))
        coll)) #{} categories))
 
+(def re-page #"[&?]page=(\d+)")
+
+(defn get-page [token]
+  (when-let [match (re-seq re-page token)]
+    (Long/parseLong (second (first match)))))
+
+(defn mock-response [response-data]
+  (let [responses (partition-all 10 response-data)]
+    (fn mock-response* [token & args]
+      (let [page (or (get-page token) 0)]
+        (cond-> {:status 200
+                 :body (json/write-str
+                        (nth responses page)
+                        {:key-fn csk/->snake_case_string})}
+          (and (zero? page) (> (count responses) 1))
+          (assoc-in [:headers :link]
+                    (format "<%s?page=%d>; rel=\"next\""
+                            token (inc page)))
+          (< 0 page (inc page) (count responses))
+          (assoc-in [:headers :link]
+                    (format "<%s>; rel=\"next\""
+                            (sg/replace token re-page
+                                        (format "?page=%d" (inc page))))))))))
+
 (defspec category-test 100
   (prop/for-all [{:keys [num-elements categories]} (psgen/categories-preserve-invariants)]
                 (let [ids (get-category-ids categories)]
-                  (with-redefs [client/get
-                                (fn [& args]
-                                  {:status 200
-                                   :body (json/write-str
-                                          categories
-                                          {:key-fn csk/->snake_case_string})})]
+                  (with-redefs [client/get (mock-response categories)]
                     (is (== num-elements (count ids)) "sanity check #1")
                     (is (= categories (into [] (ps/categories "key" {:id 1}))) "sanity check #2")
                     (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :convert? true))) ids)

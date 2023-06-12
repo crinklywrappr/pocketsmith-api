@@ -133,8 +133,7 @@
     minify? (r/map minify-account)))
 
 (defn category? [x]
-  (and (map? x)
-       (contains? x :id)
+  (and (contains? x :id)
        (contains? x :children)))
 
 (defn category-zip [category]
