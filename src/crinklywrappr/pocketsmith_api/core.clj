@@ -47,7 +47,7 @@
     (-> headers :link parse-link :next)))
 
 (defn get-page [{:keys [status body] :as response}]
-  (if (== status 200) body response))
+  (if (== status 200) body [response]))
 
 (defn fetch-many [uri key opts]
   (as-> uri $
