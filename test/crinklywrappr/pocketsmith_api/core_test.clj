@@ -89,6 +89,13 @@
              :request {:uri "uri?page=1" :key "key" :opts {}}}]
            (into [] (ps/fetch-many "uri" "key" {}))))))
 
+(deftest parse-datetime-conditional
+  (testing "non-strings and empty string should return the value, unchanged"
+    (is (= "" (ps/parse-datetime "" :date-time-no-ms)))
+    (is (= :foobar (ps/parse-datetime :foobar :date-time-no-ms)))
+    (is (= "" (ps/parse-local-datetime "" :date-time-no-ms)))
+    (is (= :foobar (ps/parse-local-datetime :foobar :date-time-no-ms)))))
+
 (defspec category-test 100
   (prop/for-all [{:keys [num-elements categories]} (psgen/categories-preserve-invariants)]
                 (let [ids (get-category-ids categories)]
