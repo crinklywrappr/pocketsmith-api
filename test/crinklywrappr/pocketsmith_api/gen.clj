@@ -4,6 +4,10 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.string :as sg]
+            (clojurewerkz.money [amounts :as ma]
+                                [currencies :as mc]
+                                [format :as mf])
             (clj-time [core :as t]
                       [format :as f])))
 
@@ -136,6 +140,58 @@
    (gen/fmap #(f/unparse (f/formatter fmt) %) (date-time)))
   ([dt fmt]
    (gen/fmap #(f/unparse (f/formatter fmt) %) (gen/return dt))))
+
+(defn country-codes [currency] (.getCountryCodes currency))
+
+(def currency
+  (gen/one-of (mapv gen/return (mc/registered-currencies))))
+
+(def currency-with-country-code
+  (->> (mc/registered-currencies)
+       (filter (comp seq country-codes))
+       (mapv gen/return) gen/one-of))
+
+(def user
+  (gen/let [mycurrency currency-with-country-code]
+    (gen/hash-map
+     :id (gen/large-integer* {:min 0})
+     :name gen/string-ascii
+     :login gen/string-ascii
+     :base-currency-code (gen/fmap
+                          (comp sg/lower-case str)
+                          (gen/return mycurrency))
+     ;; close, but they aren't using a uuid
+     :avatar-url (gen/fmap
+                  #(str "https://secure.gravatar.com/avatar/" % "?d=404")
+                  gen/uuid)
+
+     :country-code (gen/one-of (mapv gen/return (country-codes mycurrency)))
+
+     :tell-a-friend-access (gen/one-of [(gen/return nil) gen/string-ascii])
+     :available-budgets (gen/large-integer* {:min 0 :max 9976})
+     :available-accounts (gen/large-integer* {:min 0 :max 12})
+     :week-start-day (gen/large-integer* {:min 0 :max 6})
+
+     :created-at (string-date :date-time-no-ms)
+     :updated-at (string-date :date-time-no-ms)
+     :last-logged-in-at (string-date :date-time-no-ms)
+     :last-activity-at (string-date :date-time-no-ms)
+
+     :forecast-last-updated-at (string-date :date-time-no-ms)
+     :forecast-last-accessed-at (string-date :date-time-no-ms)
+     :forecast-start-date (string-date :year-month-day)
+     :forecast-end-date (string-date :year-month-day)
+     :forecast-needs-recalculate gen/boolean
+     :forecast-defer-recalculate gen/boolean
+
+     :is-reviewing-transactions gen/boolean
+     :always-show-base-currency gen/boolean
+     :using-multiple-currencies gen/boolean
+     :allowed-data-feeds gen/boolean
+     :using-feed-support-requests gen/boolean
+
+     ;; incorrect
+     :time-zone gen/string-ascii)))
 
 (def category
   (gen/let [[t1 t2] (order t/before? (gen/tuple (date-time) (date-time)))]

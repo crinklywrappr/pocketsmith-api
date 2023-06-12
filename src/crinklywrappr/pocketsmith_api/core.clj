@@ -65,25 +65,36 @@
     (f/parse-local (f/formatter fmt) dt)
     dt))
 
+(defn error-response? [response]
+  (and (contains? response :status)
+       (contains? response :headers)
+       (contains? response :body)
+       (contains? response :request)))
+
 (defn convert-datetime-on-user [user]
-  (-> user
-      (update :created-at parse-datetime :date-time-no-ms)
-      (update :updated-at parse-datetime :date-time-no-ms)
-      (update :last-logged-in-at parse-datetime :date-time-no-ms)
-      (update :last-activity-at parse-datetime :date-time-no-ms)
-      (update :forecast-last-accessed-at parse-datetime :date-time-no-ms)
-      (update :forecast-last-updated-at parse-datetime :date-time-no-ms)
-      (update :forecast-start-date parse-local-datetime :year-month-day)
-      (update :forecast-end-date parse-local-datetime :year-month-day)))
+  (if (error-response? user)
+    user
+    (-> user
+        (update :created-at parse-datetime :date-time-no-ms)
+        (update :updated-at parse-datetime :date-time-no-ms)
+        (update :last-logged-in-at parse-datetime :date-time-no-ms)
+        (update :last-activity-at parse-datetime :date-time-no-ms)
+        (update :forecast-last-accessed-at parse-datetime :date-time-no-ms)
+        (update :forecast-last-updated-at parse-datetime :date-time-no-ms)
+        (update :forecast-start-date parse-local-datetime :year-month-day)
+        (update :forecast-end-date parse-local-datetime :year-month-day))))
 
 (defn minify-user [user]
-  (select-keys user [:id :name :login :email :base-currency-code :time-zone]))
+  (if (error-response? user)
+    user
+    (select-keys user [:id :name :login :email :base-currency-code :time-zone])))
 
 (defn authorized-user [key & {:keys [convert? minify?]}]
-  (cond->>
-      (get-page (fetch-one "https://api.pocketsmith.com/v2/me" key {}))
-    convert? convert-datetime-on-user
-    minify? minify-user))
+  (letfn [(get-page [{:keys [status body] :as response}]
+            (if (== status 200) body response))]
+    (cond->> (get-page (fetch-one "https://api.pocketsmith.com/v2/me" key {}))
+      convert? convert-datetime-on-user
+      minify? minify-user)))
 
 (defn by-name-or-title [name-or-title xs]
   (some

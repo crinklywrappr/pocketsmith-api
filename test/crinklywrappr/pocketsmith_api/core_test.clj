@@ -65,9 +65,8 @@
                         (sg/replace token re-page
                                     (format "?page=%d" (inc page))))))))
 
-(defn mock-response [response-data]
-  (let [responses (partition-all 10 response-data)]
-    (partial mock-response* responses)))
+(defn mock-response [responses]
+  (partial mock-response* responses))
 
 (defn mock-error-response [responses error-page]
   (fn mock-error-response* [token & args]
@@ -96,10 +95,25 @@
     (is (= "" (ps/parse-local-datetime "" :date-time-no-ms)))
     (is (= :foobar (ps/parse-local-datetime :foobar :date-time-no-ms)))))
 
+(deftest authorized-user-test
+  (let [user (gen/generate psgen/user)]
+    (testing "happy path"
+      (with-redefs [client/get (mock-response [user])]
+        (is (= user (ps/authorized-user "key")))
+        (is (contains? (ps/authorized-user "key" :convert? true) :id))
+        (is (contains? (ps/authorized-user "key" :minify? true) :id))
+        (is (contains? (ps/authorized-user "key" :convert? true :minify? true) :id))))
+    (testing "an error should make optional steps a no-op"
+      (with-redefs [client/get (mock-error-response [user] 0)]
+        (is (== 500 (:status (ps/authorized-user "key"))))
+        (is (= (ps/authorized-user "key" :convert? true)
+               (ps/authorized-user "key" :minify? true)
+               (ps/authorized-user "key" :convert? true :minify? true)))))))
+
 (defspec category-test 100
   (prop/for-all [{:keys [num-elements categories]} (psgen/categories-preserve-invariants)]
                 (let [ids (get-category-ids categories)]
-                  (with-redefs [client/get (mock-response categories)]
+                  (with-redefs [client/get (mock-response (partition-all 10 categories))]
                     (is (== num-elements (count ids)) "sanity check #1")
                     (is (= categories (into [] (ps/categories "key" {:id 1}))) "sanity check #2")
                     (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :convert? true))) ids)
