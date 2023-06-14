@@ -22,8 +22,6 @@
   ([keyfn g] (gen/fmap #(sort-by keyfn < %) g))
   ([keyfn cmp g] (gen/fmap #(sort-by keyfn cmp < %) g)))
 
-(defn order-by [g keyfn & {:keys [cmp] :or {}}])
-
 (defn- nest-fold*
   [nestf [children parents :as a] pk]
   (if (seq children)
@@ -151,6 +149,19 @@
        (filter (comp seq country-codes))
        (mapv gen/return) gen/one-of))
 
+(defn amount*
+  ([{:keys [min max] :as opts}]
+   (gen/bind currency #(amount* % opts)))
+  ([currency {:keys [min max] :as opts}]
+   (if (zero? (.getDecimalPlaces currency))
+     (gen/fmap (partial ma/of-major currency) (gen/large-integer* opts))
+     (gen/fmap (partial ma/of-minor currency) (gen/large-integer* opts)))))
+
+(def amount (amount* {}))
+
+(defn amount->double [amt]
+  (-> amt str (sg/split #" ") second Double/parseDouble))
+
 (def user
   (gen/let [mycurrency currency-with-country-code]
     (gen/hash-map
@@ -212,6 +223,55 @@
      ;;refund-behaviour and colour are incorrect
      :refund-behaviour gen/string-ascii
      :colour gen/string-ascii)))
+
+(defn institution [created-at updated-at]
+  (gen/hash-map
+   :id (gen/large-integer* {:min 0})
+   :title gen/string-ascii
+   :currency-code (gen/fmap (comp sg/lower-case str) currency)
+   :created-at (string-date created-at :date-time-no-ms)
+   :updated-at (string-date updated-at :date-time-no-ms)))
+
+(def transaction-account
+  (gen/let [[t1 t2 t3 t4] (order t/before?
+                                 (gen/tuple (date-time) (date-time)
+                                            (date-time) (date-time)))
+            acct-currency currency]
+    (gen/hash-map
+     :institution (institution t1 t3)
+     :id (gen/large-integer* {:min 0})
+     :title gen/string-ascii
+     :number gen/string-ascii
+     :account-id (gen/large-integer* {:min 0})
+     :currency-code (gen/fmap (comp sg/lower-case str) (gen/return acct-currency))
+     :created-at (string-date t2 :date-time-no-ms)
+     :updated-at (string-date t4 :date-time-no-ms)
+     :starting-balance-date (string-date :year-month-day)
+     :current-balance-date (string-date :year-month-day)
+     :has-safe-balance-adjustment gen/boolean
+     :is-net-worth gen/boolean
+     :offline gen/boolean
+     :type (gen/one-of [(gen/return "property")
+                        (gen/return "vehicle")
+                        (gen/return "stocks")
+                        (gen/return "credit")
+                        (gen/return "bank")])
+
+     :starting-balance (gen/fmap amount->double (amount* acct-currency))
+     :current-balance (gen/fmap amount->double (amount* acct-currency))
+     :current-balance-in-base-currency (gen/fmap amount->double (amount* acct-currency))
+
+     ;; incomplete
+     :current-balance-source (gen/one-of [(gen/return "scenario_only_balance") (gen/return "data_feed")])
+     :data-feeds-balance-type (gen/return "balance") ;; need other options
+     :data-feeds-connection-id (gen/one-of [(gen/return nil) gen/string-ascii])
+     :data-feeds-account-id (gen/one-of [(gen/return nil) gen/string-ascii])
+     :latest-feed-name (gen/one-of [(gen/return nil) gen/string-ascii])
+
+     ;; incorrect
+     :current-balance-exchange-rate (gen/return nil)
+     :safe-balance-in-base-currency (gen/return nil)
+     :safe-balance (gen/return nil))))
 
 (defn categories
   [& {:keys [max-depth min-elements max-elements] :as opts}]
