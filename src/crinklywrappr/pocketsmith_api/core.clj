@@ -31,8 +31,6 @@
 (defn parse-body [{:keys [body] :as response}]
   (try
     (update response :body json/read-str :bigdec true :key-fn csk/->kebab-case-keyword)
-    (catch AssertionError ex
-      (assoc response :body body :parse-error (str (type ex))))
     (catch Exception ex
       (assoc response :body body :parse-error (str (type ex))))))
 

@@ -184,8 +184,8 @@
 
 (deftest amount->money-conditional-test
   (is (= "" (ps/amount->money "" "")))
-  (is (= 0 (ps/amount->money 0 nil)))
-  (is (= 0 (ps/amount->money 0 ""))))
+  (is (= (bigdec 0) (ps/amount->money (bigdec 0) nil)))
+  (is (= (bigdec 0) (ps/amount->money (bigdec 0) ""))))
 
 (defspec account-test 50
   (prop/for-all [user psgen/user]
@@ -194,6 +194,12 @@
                     (is (= accounts (into [] (ps/accounts "key" user))))
                     (is (= (mapv :id accounts) (mapv :id (into [] (ps/accounts "key" user :convert? true)))))
                     (is (= (mapv :id accounts) (mapv :id (into [] (ps/accounts "key" user :minify? true)))))))))
+
+(deftest by-name-or-title-test
+  (let [xs (mapv (fn [n] {:name (str n)}) (range 20))]
+    (is (= {:name "10"} (ps/by-name-or-title "10" xs))))
+  (let [xs (mapv (fn [n] {:title (str n)}) (range 20))]
+    (is (= {:title "10"} (ps/by-name-or-title "10" xs)))))
 
 (deftest account-problem-test
   (testing "zero accounts"
