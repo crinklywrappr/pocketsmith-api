@@ -28,12 +28,20 @@
    :throw-exceptions false
    :headers {:X-Developer-Key key}})
 
+(defn parse-body [{:keys [body] :as response}]
+  (try
+    (update response :body json/read-str :bigdec true :key-fn csk/->kebab-case-keyword)
+    (catch AssertionError ex
+      (assoc response :body body :parse-error (str (type ex))))
+    (catch Exception ex
+      (assoc response :body body :parse-error (str (type ex))))))
+
 (defn fetch-one [uri key opts]
   (->
    (client/get uri (merge (request-map key) opts))
    (select-keys [:status :headers :body])
+   parse-body
    (update :headers (partial cske/transform-keys csk/->kebab-case-keyword))
-   (update :body json/read-str :bigdec true :key-fn csk/->kebab-case-keyword)
    (assoc :request {:uri uri :key key :opts opts})))
 
 (defn fetch-page [uri key opts]
@@ -47,7 +55,9 @@
     (-> headers :link parse-link :next)))
 
 (defn get-page [{:keys [status body] :as response}]
-  (if (== status 200) body [response]))
+  (if (or (contains? response :parse-error) (not= status 200))
+    [response]
+    body))
 
 (defn fetch-many [uri key opts]
   (as-> uri $
@@ -103,8 +113,10 @@
                (= (:title x) name-or-title))
        x)) xs))
 
+(defn bigdec? [x] (instance? BigDecimal x))
+
 (defn amount->money [amount code]
-  (if (and (number? amount) (string? code) (seq code))
+  (if (and (bigdec? amount) (string? code) (seq code))
     (let [currency (mc/for-code (sg/upper-case code))]
       (->> currency .getDecimalPlaces
            (.movePointRight amount)
@@ -112,37 +124,58 @@
            (ma/of-minor currency)))
     amount))
 
-(defn convert-amounts-on-account [user account]
-  (let [currency-code (:currency-code account)
-        base-code (:base-currency-code user)]
+(defn long->bigdec [x]
+  (if (instance? Long x) (clojure.core/bigdec x) x))
+
+(defn ensure-bigdec-values [account]
+  (if (error-response? account)
+    account
     (-> account
-        (update :starting-balance amount->money currency-code)
-        (update :current-balance-in-base-currency amount->money base-code)
-        (update :current-balance amount->money currency-code)
-        (update :safe-balance-in-base-currency amount->money base-code)
-        (update :safe-balance amount->money currency-code))))
+        (update :starting-balance long->bigdec)
+        (update :current-balance-in-base-currency long->bigdec)
+        (update :current-balance long->bigdec)
+        (update :safe-balance-in-base-currency long->bigdec)
+        (update :safe-balance long->bigdec))))
+
+(defn convert-amounts-on-account [user account]
+  (if (error-response? account)
+    account
+    (let [currency-code (:currency-code account)
+          base-code (:base-currency-code user)]
+      (-> account
+          (update :starting-balance amount->money currency-code)
+          (update :current-balance-in-base-currency amount->money base-code)
+          (update :current-balance amount->money currency-code)
+          (update :safe-balance-in-base-currency amount->money base-code)
+          (update :safe-balance amount->money currency-code)))))
 
 (defn convert-datetime-on-account [account]
-  (-> account
-      (update-in [:institution :created-at] parse-datetime :date-time-no-ms)
-      (update-in [:institution :updated-at] parse-datetime :date-time-no-ms)
-      (update :created-at parse-datetime :date-time-no-ms)
-      (update :updated-at parse-datetime :date-time-no-ms)
-      (update :starting-balance-date parse-local-datetime :year-month-day)
-      (update :current-balance-date parse-local-datetime :year-month-day)))
+  (if (error-response? account)
+    account
+    (-> account
+        (update-in [:institution :created-at] parse-datetime :date-time-no-ms)
+        (update-in [:institution :updated-at] parse-datetime :date-time-no-ms)
+        (update :created-at parse-datetime :date-time-no-ms)
+        (update :updated-at parse-datetime :date-time-no-ms)
+        (update :starting-balance-date parse-local-datetime :year-month-day)
+        (update :current-balance-date parse-local-datetime :year-month-day))))
 
 (defn minify-account [account]
-  (select-keys account [:id :name :type
-                        :starting-balance-date
-                        :starting-balance
-                        :current-balance-date :current-balance
-                        :currency-code]))
+  (if (error-response? account)
+    account
+    (select-keys account [:id :name :type
+                          :starting-balance-date
+                          :starting-balance
+                          :current-balance-date :current-balance
+                          :currency-code])))
 
 (defn accounts [key user & {:keys [convert? minify?]}]
   (cond->>
-      (fetch-many
-       (render "https://api.pocketsmith.com/v2/users/{{id}}/transaction_accounts" user)
-       key {})
+      (->>
+       (fetch-many
+        (render "https://api.pocketsmith.com/v2/users/{{id}}/transaction_accounts" user)
+        key {})
+       (r/map ensure-bigdec-values))
     convert? (r/map (comp convert-datetime-on-account
                       (partial convert-amounts-on-account user)))
     minify? (r/map minify-account)))

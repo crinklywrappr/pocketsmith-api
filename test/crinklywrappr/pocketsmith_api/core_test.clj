@@ -54,10 +54,11 @@
 (defn mock-response*
   [responses token & {:as args}]
   (let [page (or (:page args) (get-page token) 0)]
-    (cond-> {:status 200
-             :body (json/write-str
+    (cond-> {:status 200}
+      (< page (count responses))
+      (assoc :body (json/write-str
                     (nth responses page)
-                    {:key-fn csk/->snake_case_string})}
+                    {:key-fn csk/->snake_case_string}))
       (and (zero? page) (> (count responses) 1))
       (assoc-in [:headers :link]
                 (format "<%s?page=%d>; rel=\"next\""
@@ -134,19 +135,30 @@
                         "convert + minify + normalize should not add or lose categories, and id uniqueness should be preseved")))))
 
 (deftest category-problem-test
-  (let [categories (partition-all 10 (gen/generate (psgen/categories :min-elements 50 :max-depth 5)))]
-    (with-redefs [client/get (mock-error-response categories 0)]
-      (is (== 1 (count (into [] (ps/categories "key" {:id 1})))))
-      (is (ps/error-response? (first (into [] (ps/categories "key" {:id 1})))))
-      (is (= (into [] (ps/categories "key" {:id 1}))
-             (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true)))))
-    (with-redefs [client/get (mock-error-response categories 1)]
-      (is (> (count (into [] (ps/categories "key" {:id 1}))) 1))
-      (is (ps/error-response? (last (into [] (ps/categories "key" {:id 1})))))
-      (is (= (last (into [] (ps/categories "key" {:id 1})))
-             (last (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true)))))
-      (is (every? ps/category? (butlast (into [] (ps/categories "key" {:id 1})))))
-      (is (every? ps/category? (butlast (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true))))))))
+  (testing "zero categories"
+    (with-redefs [client/get (mock-response [])]
+      (is (= [{:status 200
+               :body nil
+               :parse-error "class java.lang.NullPointerException"
+               :headers nil
+               :request {:uri "https://api.pocketsmith.com/v2/users/1/categories"
+                         :key "key" :opts {}}}]
+             (into [] (ps/categories "key" {:id 1}))
+             (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true))))))
+  (testing "problem fetching categories"
+    (let [categories (partition-all 3 (gen/generate (psgen/categories :min-elements 50 :max-depth 5)))]
+      (with-redefs [client/get (mock-error-response categories 0)]
+        (is (== 1 (count (into [] (ps/categories "key" {:id 1})))))
+        (is (ps/error-response? (first (into [] (ps/categories "key" {:id 1})))))
+        (is (= (into [] (ps/categories "key" {:id 1}))
+               (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true)))))
+      (with-redefs [client/get (mock-error-response categories 1)]
+        (is (> (count (into [] (ps/categories "key" {:id 1}))) 1))
+        (is (ps/error-response? (last (into [] (ps/categories "key" {:id 1})))))
+        (is (= (last (into [] (ps/categories "key" {:id 1})))
+               (last (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true)))))
+        (is (every? ps/category? (butlast (into [] (ps/categories "key" {:id 1})))))
+        (is (every? ps/category? (butlast (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true)))))))))
 
 (defspec money-test 10
   (prop/for-all [monies (apply gen/tuple (mapv #(psgen/money* % {}) (mc/registered-currencies)))]
@@ -174,3 +186,38 @@
   (is (= "" (ps/amount->money "" "")))
   (is (= 0 (ps/amount->money 0 nil)))
   (is (= 0 (ps/amount->money 0 ""))))
+
+(defspec account-test 50
+  (prop/for-all [user psgen/user]
+                (let [accounts (gen/generate (gen/vector (psgen/transaction-account user) 1 24))]
+                  (with-redefs [client/get (mock-response (partition-all 10 accounts))]
+                    (is (= accounts (into [] (ps/accounts "key" user))))
+                    (is (= (mapv :id accounts) (mapv :id (into [] (ps/accounts "key" user :convert? true)))))
+                    (is (= (mapv :id accounts) (mapv :id (into [] (ps/accounts "key" user :minify? true)))))))))
+
+(deftest account-problem-test
+  (testing "zero accounts"
+    (with-redefs [client/get (mock-response [])]
+      (is (= [{:status 200
+               :body nil
+               :parse-error "class java.lang.NullPointerException"
+               :headers nil
+               :request {:uri "https://api.pocketsmith.com/v2/users/1/transaction_accounts"
+                         :key "key" :opts {}}}]
+             (into [] (ps/accounts "key" {:id 1}))
+             (into [] (ps/accounts "key" {:id 1} :convert? true :minify? true))))))
+  (testing "problem fetching accounts"
+    (let [user (gen/generate psgen/user)
+          accounts (partition-all 3 (gen/generate (gen/vector (psgen/transaction-account user) 9)))]
+      (with-redefs [client/get (mock-error-response accounts 0)]
+        (is (== 1 (count (into [] (ps/accounts "key" user)))))
+        (is (ps/error-response? (first (into [] (ps/accounts "key" user)))))
+        (is (= (into [] (ps/accounts "key" user))
+               (into [] (ps/accounts "key" user :convert? true :minify? true)))))
+      (with-redefs [client/get (mock-error-response accounts 1)]
+        (is (> (count (into [] (ps/accounts "key" user))) 1))
+        (is (ps/error-response? (last (into [] (ps/accounts "key" user)))))
+        (is (= (last (into [] (ps/accounts "key" user)))
+               (last (into [] (ps/accounts "key" user :convert? true :minify? true)))))
+        (is (every? #(contains? % :id) (butlast (into [] (ps/accounts "key" user)))))
+        (is (every? #(contains? % :id) (butlast (into [] (ps/accounts "key" user :convert? true :minify? true)))))))))

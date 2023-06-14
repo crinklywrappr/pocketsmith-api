@@ -158,7 +158,7 @@
 (def money (money* {}))
 
 (defn money->bigdec [amt]
-  (-> amt str (sg/split #" ") second BigDecimal.))
+  (-> amt str (sg/split #" ") second bigdec))
 
 (def user
   (gen/let [mycurrency currency-with-country-code]
