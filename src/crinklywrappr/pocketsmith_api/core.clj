@@ -33,7 +33,7 @@
    (client/get uri (merge (request-map key) opts))
    (select-keys [:status :headers :body])
    (update :headers (partial cske/transform-keys csk/->kebab-case-keyword))
-   (update :body json/read-str :key-fn csk/->kebab-case-keyword)
+   (update :body json/read-str :bigdec true :key-fn csk/->kebab-case-keyword)
    (assoc :request {:uri uri :key key :opts opts})))
 
 (defn fetch-page [uri key opts]
@@ -105,7 +105,11 @@
 
 (defn amount->money [amount code]
   (if (and (number? amount) (string? code))
-    (ma/amount-of (mc/for-code (sg/upper-case code)) amount)
+    (let [currency (mc/for-code (sg/upper-case code))]
+      (->> currency .getDecimalPlaces
+           (.movePointRight amount)
+           str Long/parseLong
+           (ma/of-minor currency)))
     amount))
 
 (defn convert-amounts-on-account [user account]

@@ -149,18 +149,16 @@
        (filter (comp seq country-codes))
        (mapv gen/return) gen/one-of))
 
-(defn amount*
-  ([{:keys [min max] :as opts}]
-   (gen/bind currency #(amount* % opts)))
-  ([currency {:keys [min max] :as opts}]
-   (if (zero? (.getDecimalPlaces currency))
-     (gen/fmap (partial ma/of-major currency) (gen/large-integer* opts))
-     (gen/fmap (partial ma/of-minor currency) (gen/large-integer* opts)))))
+(defn money*
+  ([{:keys [min max] :or {min (Long/MIN_VALUE) max (Long/MAX_VALUE)} :as opts}]
+   (gen/bind currency #(money* % opts)))
+  ([currency {:keys [min max] :or {min (Long/MIN_VALUE) max (Long/MAX_VALUE)} :as opts}]
+   (gen/fmap (partial ma/of-minor currency) (gen/large-integer* opts))))
 
-(def amount (amount* {}))
+(def money (money* {}))
 
-(defn amount->double [amt]
-  (-> amt str (sg/split #" ") second Double/parseDouble))
+(defn money->bigdec [amt]
+  (-> amt str (sg/split #" ") second BigDecimal.))
 
 (def user
   (gen/let [mycurrency currency-with-country-code]
@@ -232,7 +230,7 @@
    :created-at (string-date created-at :date-time-no-ms)
    :updated-at (string-date updated-at :date-time-no-ms)))
 
-(def transaction-account
+(defn transaction-account [user]
   (gen/let [[t1 t2 t3 t4] (order t/before?
                                  (gen/tuple (date-time) (date-time)
                                             (date-time) (date-time)))
@@ -257,9 +255,9 @@
                         (gen/return "credit")
                         (gen/return "bank")])
 
-     :starting-balance (gen/fmap amount->double (amount* acct-currency))
-     :current-balance (gen/fmap amount->double (amount* acct-currency))
-     :current-balance-in-base-currency (gen/fmap amount->double (amount* acct-currency))
+     :starting-balance (gen/fmap money->bigdec (money* acct-currency {}))
+     :current-balance (gen/fmap money->bigdec (money* acct-currency {}))
+     :current-balance-in-base-currency (gen/fmap money->bigdec (money* (mc/for-code (sg/upper-case (:base-currency-code user))) {}))
 
      ;; incomplete
      :current-balance-source (gen/one-of [(gen/return "scenario_only_balance") (gen/return "data_feed")])

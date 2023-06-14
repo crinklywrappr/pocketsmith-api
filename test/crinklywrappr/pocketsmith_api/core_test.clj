@@ -12,6 +12,9 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [camel-snake-kebab.core :as csk]
+            (clojurewerkz.money [amounts :as ma]
+                                [currencies :as mc]
+                                [format :as mf])
             (clj-time [core :as t]
                       [format :as f])))
 
@@ -144,3 +147,27 @@
              (last (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true)))))
       (is (every? ps/category? (butlast (into [] (ps/categories "key" {:id 1})))))
       (is (every? ps/category? (butlast (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true))))))))
+
+(defspec money-test 10
+  (prop/for-all [monies (apply gen/tuple (mapv #(psgen/money* % {}) (mc/registered-currencies)))]
+                (is (= (vec monies)
+                       (mapv
+                        (fn [money]
+                          (let [code (sg/lower-case (ma/currency-of money))
+                                amount (psgen/money->bigdec money)]
+                            (ps/amount->money amount code)))
+                        monies)))))
+
+(defspec usd-test 100
+  (prop/for-all [money (psgen/money* mc/USD {})]
+                (let [code (sg/lower-case (ma/currency-of money))
+                      amount (psgen/money->bigdec money)]
+                  (is (= money (ps/amount->money amount code))))))
+
+(defspec jpy-test 100
+  (prop/for-all [money (psgen/money* mc/JPY {})]
+                (let [code (sg/lower-case (ma/currency-of money))
+                      amount (psgen/money->bigdec money)]
+                  (is (= money (ps/amount->money amount code))))))
+
+
