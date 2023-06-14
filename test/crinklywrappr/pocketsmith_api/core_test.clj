@@ -170,4 +170,7 @@
                       amount (psgen/money->bigdec money)]
                   (is (= money (ps/amount->money amount code))))))
 
-
+(deftest amount->money-conditional-test
+  (is (= "" (ps/amount->money "" "")))
+  (is (= 0 (ps/amount->money 0 nil)))
+  (is (= 0 (ps/amount->money 0 ""))))

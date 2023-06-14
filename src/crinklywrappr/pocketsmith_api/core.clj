@@ -104,7 +104,7 @@
        x)) xs))
 
 (defn amount->money [amount code]
-  (if (and (number? amount) (string? code))
+  (if (and (number? amount) (string? code) (seq code))
     (let [currency (mc/for-code (sg/upper-case code))]
       (->> currency .getDecimalPlaces
            (.movePointRight amount)
