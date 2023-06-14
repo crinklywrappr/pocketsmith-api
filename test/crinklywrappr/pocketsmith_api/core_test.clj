@@ -129,3 +129,18 @@
                         "normalize/flatten should not add or lose categories, and id uniqueness should be preseved")
                     (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true))) ids)
                         "convert + minify + normalize should not add or lose categories, and id uniqueness should be preseved")))))
+
+(deftest category-problem-test
+  (let [categories (partition-all 10 (gen/generate (psgen/categories :min-elements 50 :max-depth 5)))]
+    (with-redefs [client/get (mock-error-response categories 0)]
+      (is (== 1 (count (into [] (ps/categories "key" {:id 1})))))
+      (is (ps/error-response? (first (into [] (ps/categories "key" {:id 1})))))
+      (is (= (into [] (ps/categories "key" {:id 1}))
+             (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true)))))
+    (with-redefs [client/get (mock-error-response categories 1)]
+      (is (> (count (into [] (ps/categories "key" {:id 1}))) 1))
+      (is (ps/error-response? (last (into [] (ps/categories "key" {:id 1})))))
+      (is (= (last (into [] (ps/categories "key" {:id 1})))
+             (last (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true)))))
+      (is (every? ps/category? (butlast (into [] (ps/categories "key" {:id 1})))))
+      (is (every? ps/category? (butlast (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true))))))))

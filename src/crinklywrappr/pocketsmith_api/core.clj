@@ -145,7 +145,9 @@
 
 (defn category? [x]
   (and (contains? x :id)
-       (contains? x :children)))
+       (or
+        (contains? x :parents)
+        (contains? x :children))))
 
 (defn category-zip [category]
   (zip/zipper
@@ -155,19 +157,23 @@
    category))
 
 (defn flatten-category [category]
-  (letfn [(-children [x] (dissoc x :children))]
-    (loop [acc [] z (category-zip category)]
-      (if (zip/end? z)
-        acc
-        (if-let [node (zip/node z)]
-          (recur
-           (conj acc (-> node -children
-                         (assoc :parents (mapv -children (zip/path z)))))
-           (zip/next z))
-          (recur acc (zip/next z)))))))
+  (if (error-response? category)
+    [category]
+    (letfn [(-children [x] (dissoc x :children))]
+      (loop [acc [] z (category-zip category)]
+        (if (zip/end? z)
+          acc
+          (if-let [node (zip/node z)]
+            (recur
+             (conj acc (-> node -children
+                           (assoc :parents (mapv -children (zip/path z)))))
+             (zip/next z))
+            (recur acc (zip/next z))))))))
 
 (defn normalize-category [category]
-  (update category :parents (partial mapv :id)))
+  (if (error-response? category)
+    category
+    (update category :parents (partial mapv :id))))
 
 (defn convert-datetime-on-category [category]
   (-> category
@@ -183,11 +189,13 @@
     loc))
 
 (defn modify-categories [f category]
-  (let [f (partial modify-category* f)]
-    (loop [z (category-zip category)]
-      (if (zip/end? z)
-        (zip/root z)
-        (recur (zip/next (f z)))))))
+  (if (error-response? category)
+    category
+    (let [f (partial modify-category* f)]
+      (loop [z (category-zip category)]
+        (if (zip/end? z)
+          (zip/root z)
+          (recur (zip/next (f z))))))))
 
 (defn categories [key user & {:keys [flatten? normalize? convert? minify?]}]
   (cond->>
