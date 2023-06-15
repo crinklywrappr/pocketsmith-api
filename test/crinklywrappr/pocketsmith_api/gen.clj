@@ -316,6 +316,17 @@
          (find-max-depth* c categories))
        c)) 0 categories))
 
+(defn distinct-vals [maps]
+  (reduce
+   (fn [a b]
+     (reduce-kv
+      (fn [a k v]
+        (-> a
+            (update k conj v)
+            (update k distinct)))
+      a b))
+   {} maps))
+
 (defspec category-dates-make-sense 100
   (prop/for-all [{:keys [created-at updated-at]} category]
                 (let [created-at (f/parse (f/formatter :date-time-no-ms) created-at)
@@ -327,3 +338,32 @@
   (prop/for-all [{:keys [num-elements max-depth categories]} (categories-preserve-invariants)]
                 (is (== (count-categories categories) num-elements))
                 (is (< (find-max-depth categories) num-elements))))
+
+(defn transaction [user]
+  (gen/let [[t1 t2 t3] (order t/before? (gen/tuple (date-time) (date-time) (date-time)))
+            acct (transaction-account user)]
+    (gen/hash-map
+     :id (gen/large-integer* {:min 0})
+     :payee gen/string-ascii
+     :original-payee gen/string-ascii
+
+     :amount (gen/fmap money->bigdec (money* (mc/for-code (sg/upper-case (:currency-code acct)))))
+     :closing-balance (gen/fmap money->bigdec (money* (mc/for-code (sg/upper-case (:currency-code acct)))))
+     :amount-in-base-currency (gen/fmap money->bigdec (money* (mc/for-code (sg/upper-case (:base-currency-code user))) {}))
+
+     :created-at (string-date t1 :date-time-no-ms)
+     :updated-at (string-date t2 :date-time-no-ms)
+     :date (string-date t3 :year-month-day)
+
+     :transaction-account (gen/return acct)
+     :category category
+
+     :labels (gen/vector gen/string-ascii)
+     :upload-source (gen/return "data_feed")
+     :type (gen/one-of [(gen/return "debit") (gen/return "credit")])
+     :note (gen/one-of [(gen/return nil) gen/string-ascii])
+     :status (gen/return "posted")
+     :is-transfer (gen/one-of [(gen/return nil) gen/boolean])
+     :cheque-number (gen/one-of [(gen/return nil) (gen/large-integer* {:min 1000 :max 9999})])
+     :needs-review gen/boolean
+     :memo (gen/return nil))))
