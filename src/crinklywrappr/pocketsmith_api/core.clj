@@ -174,54 +174,69 @@
 (defn long->bigdec [x]
   (if (instance? Long x) (clojure.core/bigdec x) x))
 
+(defn ensure-bigdec-values-on-account* [account]
+  (-> account
+      (update :starting-balance long->bigdec)
+      (update :current-balance-in-base-currency long->bigdec)
+      (update :current-balance long->bigdec)
+      (update :safe-balance-in-base-currency long->bigdec)
+      (update :safe-balance long->bigdec)))
+
 (defn ensure-bigdec-values-on-account [account]
   (if (error-response? account)
     account
-    (-> account
-        (update :starting-balance long->bigdec)
-        (update :current-balance-in-base-currency long->bigdec)
-        (update :current-balance long->bigdec)
-        (update :safe-balance-in-base-currency long->bigdec)
-        (update :safe-balance long->bigdec))))
+    (ensure-bigdec-values-on-account* account)))
+
+(defn convert-currencies-on-account* [account]
+  (-> account
+      (update-in [:institution :currency-code] code->currency)
+      (update :currency-code code->currency)))
 
 (defn convert-currencies-on-account [account]
   (if (error-response? account)
     account
+    (convert-currencies-on-account* account)))
+
+(defn convert-amounts-on-account* [user account]
+  (let [currency-code (:currency-code account)
+        base-code (:base-currency-code user)]
     (-> account
-        (update-in [:institution :currency-code] code->currency)
-        (update :currency-code code->currency))))
+        (update :starting-balance amount->money currency-code)
+        (update :current-balance-in-base-currency amount->money base-code)
+        (update :current-balance amount->money currency-code)
+        (update :safe-balance-in-base-currency amount->money base-code)
+        (update :safe-balance amount->money currency-code))))
 
 (defn convert-amounts-on-account [user account]
   (if (error-response? account)
     account
-    (let [currency-code (:currency-code account)
-          base-code (:base-currency-code user)]
-      (-> account
-          (update :starting-balance amount->money currency-code)
-          (update :current-balance-in-base-currency amount->money base-code)
-          (update :current-balance amount->money currency-code)
-          (update :safe-balance-in-base-currency amount->money base-code)
-          (update :safe-balance amount->money currency-code)))))
+    (convert-amounts-on-account* user account)))
+
+(defn convert-datetime-on-account* [account]
+  (-> account
+      (update-in [:institution :created-at] parse-datetime :date-time-no-ms)
+      (update-in [:institution :updated-at] parse-datetime :date-time-no-ms)
+      (update :created-at parse-datetime :date-time-no-ms)
+      (update :updated-at parse-datetime :date-time-no-ms)
+      (update :starting-balance-date parse-local-datetime :year-month-day)
+      (update :current-balance-date parse-local-datetime :year-month-day)))
 
 (defn convert-datetime-on-account [account]
   (if (error-response? account)
     account
-    (-> account
-        (update-in [:institution :created-at] parse-datetime :date-time-no-ms)
-        (update-in [:institution :updated-at] parse-datetime :date-time-no-ms)
-        (update :created-at parse-datetime :date-time-no-ms)
-        (update :updated-at parse-datetime :date-time-no-ms)
-        (update :starting-balance-date parse-local-datetime :year-month-day)
-        (update :current-balance-date parse-local-datetime :year-month-day))))
+    (convert-datetime-on-account* account)))
+
+(defn minify-account* [account]
+  (select-keys account [:id :name :type
+                        :starting-balance-date
+                        :starting-balance
+                        :current-balance-date :current-balance
+                        :currency-code]))
 
 (defn minify-account [account]
   (if (error-response? account)
     account
-    (select-keys account [:id :name :type
-                          :starting-balance-date
-                          :starting-balance
-                          :current-balance-date :current-balance
-                          :currency-code])))
+    (minify-account* account)))
 
 (defn accounts [key user & {:keys [convert? minify?]}]
   (cond->>
@@ -306,12 +321,12 @@
         (update :amount bigdec)
         (update :amount-in-base-currency bigdec)
         (update :closing-balance bigdec)
-        (update :transaction-account ensure-bigdec-values-on-account))))
+        (update :transaction-account ensure-bigdec-values-on-account*))))
 
 (defn convert-currencies-on-transaction [transaction]
   (if (error-response? transaction)
     transaction
-    (update transaction :transaction-account convert-currencies-on-account)))
+    (update transaction :transaction-account convert-currencies-on-account*)))
 
 (defn convert-amounts-on-transaction [user transaction]
   (if (error-response? transaction)
@@ -322,12 +337,13 @@
           (update :amount amount->money currency-code)
           (update :amount-in-base-currency amount->money base-code)
           (update :closing-balance amount->money currency-code)
-          (update :transaction-account (partial convert-amounts-on-account user))))))
+          (update :transaction-account (partial convert-amounts-on-account* user))))))
 
 (defn convert-datetime-on-transaction [transaction]
   (if (error-response? transaction)
     transaction
     (-> transaction
+        (update :transaction-account convert-datetime-on-account*)
         (update :created-at parse-datetime :date-time-no-ms)
         (update :updated-at parse-datetime :date-time-no-ms)
         (update :date parse-local-datetime :year-month-day))))
@@ -349,7 +365,7 @@
                       :closing-balance
                       :transaction-account
                       :category])
-        (update :transaction-account minify-account)
+        (update :transaction-account minify-account*)
         (update :category minify-category))))
 
 (defn user-transactions
@@ -396,8 +412,11 @@
 
 (defn time-zone [date-time] (.getZone date-time))
 
-(defn last-month [time-zone-id]
-  (let [dt (t/to-time-zone (t/now) (t/time-zone-for-id time-zone-id))
+(defn last-month
+  "Be sure you used `:convert?` on the user"
+  [{:keys [time-zone] :as user}]
+  {:pre [(ts/time-zone? time-zone)]}
+  (let [dt (t/to-time-zone (t/now) time-zone)
         a-month-ago (t/minus dt (t/months 1))
         end-of-month (t/minus dt (t/days (t/day dt)))
         year (t/year a-month-ago) month (t/month a-month-ago)]
