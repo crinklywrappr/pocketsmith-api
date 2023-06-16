@@ -36,10 +36,6 @@ Your library will be deployed to com.github.crinklywrappr/pocketsmith-api on clo
 
 # Limitations
 
-## Unsupported user time-zones
-
-Pocketsmith reports user time-zones using a format that `clj-time` doesn't understand. For example: `Central Time (US & Canada)` instead of `America/Chicago`. Until that changes, or a workaround is added, `pocketsmith-api` will be unable to report date-times in the user's time-zone.
-
 ## Unsupported currencies
 
 `clojurewerkz/money` supports most of the (currently) 175 currencies pocketsmith knows about. If you need support for one of the following currencies, then you will need to roll your own.
