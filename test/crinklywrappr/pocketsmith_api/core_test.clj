@@ -1026,30 +1026,28 @@
     (is (= (vec monies)
            (mapv
             (fn [money]
-              (let [code (sg/lower-case (ma/currency-of money))
+              (let [code (ma/currency-of money)
                     amount (psgen/money->bigdec money)]
                 (ps/amount->money amount code)))
             monies)))))
 
 (defspec usd-test 100
   (prop/for-all [money (psgen/money* mc/USD {})]
-    (let [code (sg/lower-case (ma/currency-of money))
+    (let [code (ma/currency-of money)
           amount (psgen/money->bigdec money)]
       (is (= money (ps/amount->money amount code))))))
 
 (defspec jpy-test 100
   (prop/for-all [money (psgen/money* mc/JPY {})]
-    (let [code (sg/lower-case (ma/currency-of money))
+    (let [code (ma/currency-of money)
           amount (psgen/money->bigdec money)]
       (is (= money (ps/amount->money amount code))))))
 
-(deftest amount->money-conditional-test
-  (is (= "" (ps/amount->money "" "")))
-  (is (= (bigdec 0) (ps/amount->money (bigdec 0) nil)))
-  (is (= (bigdec 0) (ps/amount->money (bigdec 0) ""))))
+(deftest amount->money-exception-test
+  (is (thrown? ClassCastException (ps/amount->money 10M "usd"))))
 
 (defspec account-test 50
-  (prop/for-all [user psgen/user]
+  (prop/for-all [user (gen/fmap ps/convert-currency-code-on-user psgen/user)]
     (let [accounts (gen/generate (gen/vector (psgen/transaction-account user) 1 24))]
       (with-redefs [client/get (mock-response (partition-all 10 accounts))]
         (is (= accounts (into [] (ps/accounts "key" user))))
@@ -1063,34 +1061,37 @@
     (is (= {:title "10"} (ps/by-name-or-title "10" xs)))))
 
 (deftest account-problem-test
-  (testing "zero accounts"
-    (with-redefs [client/get (mock-response [])]
-      (is (= [{:status 200
-               :body nil
-               :parse-error "class java.lang.NullPointerException"
-               :headers nil
-               :request {:uri "https://api.pocketsmith.com/v2/users/1/transaction_accounts"
-                         :key "key" :opts {:query-params {:per_page 100}}}}]
-             (into [] (ps/accounts "key" {:id 1}))
-             (into [] (ps/accounts "key" {:id 1} :convert? true :minify? true))))))
-  (testing "problem fetching accounts"
-    (let [user (gen/generate psgen/user)
-          accounts (partition-all 3 (gen/generate (gen/vector (psgen/transaction-account user) 9)))]
-      (with-redefs [client/get (mock-error-response accounts 0)]
-        (is (== 1 (count (into [] (ps/accounts "key" user)))))
-        (is (ps/error-response? (first (into [] (ps/accounts "key" user)))))
-        (is (= (into [] (ps/accounts "key" user))
-               (into [] (ps/accounts "key" user :convert? true :minify? true)))))
-      (with-redefs [client/get (mock-error-response accounts 1)]
-        (is (> (count (into [] (ps/accounts "key" user))) 1))
-        (is (ps/error-response? (last (into [] (ps/accounts "key" user)))))
-        (is (= (last (into [] (ps/accounts "key" user)))
-               (last (into [] (ps/accounts "key" user :convert? true :minify? true)))))
-        (is (every? #(contains? % :id) (butlast (into [] (ps/accounts "key" user)))))
-        (is (every? #(contains? % :id) (butlast (into [] (ps/accounts "key" user :convert? true :minify? true)))))))))
+  (testing "assertion error"
+    (is (thrown? AssertionError (ps/accounts "key" {:id 1} :convert? true))))
+  (let [user (gen/generate (gen/fmap (comp #(assoc % :id 1) ps/convert-currency-code-on-user) psgen/user))]
+    (testing "zero accounts"
+      (with-redefs [client/get (mock-response [])]
+        (is (= [{:status 200
+                 :body nil
+                 :parse-error "class java.lang.NullPointerException"
+                 :headers nil
+                 :request {:uri "https://api.pocketsmith.com/v2/users/1/transaction_accounts"
+                           :key "key" :opts {:query-params {:per_page 100}}}}]
+               (into [] (ps/accounts "key" user))
+               (into [] (ps/accounts "key" user :convert? true :minify? true))))))
+    (testing "problem fetching accounts"
+      (let [user (gen/generate (gen/fmap ps/convert-currency-code-on-user psgen/user))
+            accounts (partition-all 3 (gen/generate (gen/vector (psgen/transaction-account user) 9)))]
+        (with-redefs [client/get (mock-error-response accounts 0)]
+          (is (== 1 (count (into [] (ps/accounts "key" user)))))
+          (is (ps/error-response? (first (into [] (ps/accounts "key" user)))))
+          (is (= (into [] (ps/accounts "key" user))
+                 (into [] (ps/accounts "key" user :convert? true :minify? true)))))
+        (with-redefs [client/get (mock-error-response accounts 1)]
+          (is (> (count (into [] (ps/accounts "key" user))) 1))
+          (is (ps/error-response? (last (into [] (ps/accounts "key" user)))))
+          (is (= (last (into [] (ps/accounts "key" user)))
+                 (last (into [] (ps/accounts "key" user :convert? true :minify? true)))))
+          (is (every? #(contains? % :id) (butlast (into [] (ps/accounts "key" user)))))
+          (is (every? #(contains? % :id) (butlast (into [] (ps/accounts "key" user :convert? true :minify? true))))))))))
 
 (defspec transaction-test 10
-  (prop/for-all [user psgen/user]
+  (prop/for-all [user (gen/fmap ps/convert-currency-code-on-user psgen/user)]
     (let [transactions (gen/generate (gen/vector (psgen/transaction user) 1 100))]
       (with-redefs [client/get (mock-response (partition-all 10 transactions))]
         (is (= (mapv :id transactions)
@@ -1122,70 +1123,74 @@
                (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))))))
 
 (deftest transactions-problem-test
-  (testing "zero transactions"
-    (with-redefs [client/get (mock-response [])]
-      (is (= [{:status 200
-               :body nil
-               :parse-error "class java.lang.NullPointerException"
-               :headers nil
-               :request {:uri "https://api.pocketsmith.com/v2/users/1/transactions"
-                         :key "key" :opts {:query-params {:per_page 100}}}}]
-             (into [] (ps/user-transactions "key" {:id 1} {}))
-             (into [] (ps/user-transactions "key" {:id 1} {} :convert? true :minify? true :normalize? true))))
-      (is (= [{:status 200
-               :body nil
-               :parse-error "class java.lang.NullPointerException"
-               :headers nil
-               :request {:uri "https://api.pocketsmith.com/v2/transaction_accounts/1/transactions"
-                         :key "key" :opts {:query-params {:per_page 100}}}}]
-             (into [] (ps/account-transactions "key" {:id 1} {:id 1} {}))
-             (into [] (ps/account-transactions "key" {:id 1} {:id 1} {} :convert? true :minify? true :normalize? true))))
-      (is (= [{:status 200
-               :body nil
-               :parse-error "class java.lang.NullPointerException"
-               :headers nil
-               :request {:uri "https://api.pocketsmith.com/v2/categories/1/transactions"
-                         :key "key" :opts {:query-params {:per_page 100}}}}]
-             (into [] (ps/category-transactions "key" {:id 1} {:id 1} {}))
-             (into [] (ps/category-transactions "key" {:id 1} {:id 1} {} :convert? true :minify? true :normalize? true))))))
-  (testing "problem fetching transactions"
-    (let [user (gen/generate psgen/user)
-          transactions (partition-all 3 (gen/generate (gen/vector (psgen/transaction user) 9)))]
-      (with-redefs [client/get (mock-error-response transactions 0)]
-        ;; user
-        (is (== 1 (count (into [] (ps/user-transactions "key" user {})))))
-        (is (ps/error-response? (first (into [] (ps/user-transactions "key" user {})))))
-        (is (= (into [] (ps/user-transactions "key" user {}))
+  (testing "assertion error"
+    (is (thrown? AssertionError (ps/user-transactions "key" {:id 1} {} :convert? true)))
+    (is (thrown? AssertionError (ps/account-transactions "key" {:id 1} {:id 1} {} :convert? true)))
+    (is (thrown? AssertionError (ps/category-transactions "key" {:id 1} {:id 1} {} :convert? true))))
+  (let [user (gen/generate (gen/fmap (comp #(assoc % :id 1) ps/convert-currency-code-on-user) psgen/user))]
+    (testing "zero transactions"
+      (with-redefs [client/get (mock-response [])]
+        (is (= [{:status 200
+                 :body nil
+                 :parse-error "class java.lang.NullPointerException"
+                 :headers nil
+                 :request {:uri "https://api.pocketsmith.com/v2/users/1/transactions"
+                           :key "key" :opts {:query-params {:per_page 100}}}}]
+               (into [] (ps/user-transactions "key" user {}))
                (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true))))
-        ;; account
-        (is (== 1 (count (into [] (ps/account-transactions "key" user {:id 1} {})))))
-        (is (ps/error-response? (first (into [] (ps/account-transactions "key" user {:id 1} {})))))
-        (is (= (into [] (ps/account-transactions "key" user {:id 1} {}))
+        (is (= [{:status 200
+                 :body nil
+                 :parse-error "class java.lang.NullPointerException"
+                 :headers nil
+                 :request {:uri "https://api.pocketsmith.com/v2/transaction_accounts/1/transactions"
+                           :key "key" :opts {:query-params {:per_page 100}}}}]
+               (into [] (ps/account-transactions "key" user {:id 1} {}))
                (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true))))
-        ;; category
-        (is (== 1 (count (into [] (ps/category-transactions "key" user {:id 1} {})))))
-        (is (ps/error-response? (first (into [] (ps/category-transactions "key" user {:id 1} {})))))
-        (is (= (into [] (ps/category-transactions "key" user {:id 1} {}))
-               (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
-      (with-redefs [client/get (mock-error-response transactions 1)]
-        ;; user
-        (is (> (count (into [] (ps/user-transactions "key" user {}))) 1))
-        (is (ps/error-response? (last (into [] (ps/user-transactions "key" user {})))))
-        (is (= (last (into [] (ps/user-transactions "key" user {})))
-               (last (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true)))))
-        (is (every? #(contains? % :id) (butlast (into [] (ps/user-transactions "key" user {})))))
-        (is (every? #(contains? % :id) (butlast (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true)))))
-        ;; account
-        (is (> (count (into [] (ps/account-transactions "key" user {:id 1} {}))) 1))
-        (is (ps/error-response? (last (into [] (ps/account-transactions "key" user {:id 1} {})))))
-        (is (= (last (into [] (ps/account-transactions "key" user {:id 1} {})))
-               (last (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
-        (is (every? #(contains? % :id) (butlast (into [] (ps/account-transactions "key" user {:id 1} {})))))
-        (is (every? #(contains? % :id) (butlast (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
-        ;; category
-        (is (> (count (into [] (ps/category-transactions "key" user {:id 1} {}))) 1))
-        (is (ps/error-response? (last (into [] (ps/category-transactions "key" user {:id 1} {})))))
-        (is (= (last (into [] (ps/category-transactions "key" user {:id 1} {})))
-               (last (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
-        (is (every? #(contains? % :id) (butlast (into [] (ps/category-transactions "key" user {:id 1} {})))))
-        (is (every? #(contains? % :id) (butlast (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))))))
+        (is (= [{:status 200
+                 :body nil
+                 :parse-error "class java.lang.NullPointerException"
+                 :headers nil
+                 :request {:uri "https://api.pocketsmith.com/v2/categories/1/transactions"
+                           :key "key" :opts {:query-params {:per_page 100}}}}]
+               (into [] (ps/category-transactions "key" user {:id 1} {}))
+               (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true))))))
+    (testing "problem fetching transactions"
+      (let [transactions (partition-all 3 (gen/generate (gen/vector (psgen/transaction user) 9)))]
+        (with-redefs [client/get (mock-error-response transactions 0)]
+          ;; user
+          (is (== 1 (count (into [] (ps/user-transactions "key" user {})))))
+          (is (ps/error-response? (first (into [] (ps/user-transactions "key" user {})))))
+          (is (= (into [] (ps/user-transactions "key" user {}))
+                 (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true))))
+          ;; account
+          (is (== 1 (count (into [] (ps/account-transactions "key" user {:id 1} {})))))
+          (is (ps/error-response? (first (into [] (ps/account-transactions "key" user {:id 1} {})))))
+          (is (= (into [] (ps/account-transactions "key" user {:id 1} {}))
+                 (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true))))
+          ;; category
+          (is (== 1 (count (into [] (ps/category-transactions "key" user {:id 1} {})))))
+          (is (ps/error-response? (first (into [] (ps/category-transactions "key" user {:id 1} {})))))
+          (is (= (into [] (ps/category-transactions "key" user {:id 1} {}))
+                 (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
+        (with-redefs [client/get (mock-error-response transactions 1)]
+          ;; user
+          (is (> (count (into [] (ps/user-transactions "key" user {}))) 1))
+          (is (ps/error-response? (last (into [] (ps/user-transactions "key" user {})))))
+          (is (= (last (into [] (ps/user-transactions "key" user {})))
+                 (last (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true)))))
+          (is (every? #(contains? % :id) (butlast (into [] (ps/user-transactions "key" user {})))))
+          (is (every? #(contains? % :id) (butlast (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true)))))
+          ;; account
+          (is (> (count (into [] (ps/account-transactions "key" user {:id 1} {}))) 1))
+          (is (ps/error-response? (last (into [] (ps/account-transactions "key" user {:id 1} {})))))
+          (is (= (last (into [] (ps/account-transactions "key" user {:id 1} {})))
+                 (last (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
+          (is (every? #(contains? % :id) (butlast (into [] (ps/account-transactions "key" user {:id 1} {})))))
+          (is (every? #(contains? % :id) (butlast (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
+          ;; category
+          (is (> (count (into [] (ps/category-transactions "key" user {:id 1} {}))) 1))
+          (is (ps/error-response? (last (into [] (ps/category-transactions "key" user {:id 1} {})))))
+          (is (= (last (into [] (ps/category-transactions "key" user {:id 1} {})))
+                 (last (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
+          (is (every? #(contains? % :id) (butlast (into [] (ps/category-transactions "key" user {:id 1} {})))))
+          (is (every? #(contains? % :id) (butlast (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true))))))))))

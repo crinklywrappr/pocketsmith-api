@@ -14,7 +14,8 @@
             (clj-time [core :as t]
                       [local :as l]
                       [format :as f]
-                      [types :as ts])))
+                      [types :as ts]))
+  (:import [org.joda.money CurrencyUnit]))
 
 (def link-regex #"<([^>]+)>; rel=\"(first|next|last)\"")
 (def iso-8601 "yyyy-MM-dd'T'HH:mm:ssZ")
@@ -153,22 +154,29 @@
                (= (:title x) name-or-title))
        x)) xs))
 
-(defn bigdec? [x] (instance? BigDecimal x))
+(defn bigdec? [x]
+  (instance? BigDecimal x))
 
 (defn nonempty-string? [s]
   (and (string? s) (seq s)))
 
 (defn currency? [x]
-  (instance? org.joda.money.CurrencyUnit x))
+  (instance? CurrencyUnit x))
 
-(defn amount->money [amount code]
-  (if-let [currency (if (nonempty-string? code) (code->currency code) code)]
-    (if (and (bigdec? amount) (currency? currency))
-      (->> currency .getDecimalPlaces
-           (.movePointRight amount)
-           str Long/parseLong
-           (ma/of-minor currency))
-      amount)
+(defn get-decimal-places [^CurrencyUnit x]
+  (.getDecimalPlaces x))
+
+(defn move-point-right [^BigDecimal x n]
+  (.movePointRight x n))
+
+(defn amount->money
+  "assumes `code` satisfies the `currency?` predicate"
+  [amount code]
+  (if (bigdec? amount)
+    (->> code get-decimal-places
+         (move-point-right amount)
+         str Long/parseLong
+         (ma/of-minor code))
     amount))
 
 (defn long->bigdec [x]
@@ -238,7 +246,9 @@
     account
     (minify-account* account)))
 
-(defn accounts [key user & {:keys [convert? minify?]}]
+(defn accounts
+  [key user & {:keys [convert? minify?]}]
+  {:pre [(or (and convert? (currency? (:base-currency-code user))) (not convert?))]}
   (cond->>
       (->>
        (fetch-many
@@ -370,6 +380,7 @@
 
 (defn get-transactions*
   [key user uri query-params {:keys [normalize? convert? minify?]}]
+  {:pre [(or (and convert? (currency? (:base-currency-code user))) (not convert?))]}
   (cond->>
       (->>
        {:query-params (merge {:per_page 100} query-params)}
@@ -393,7 +404,8 @@
   [key user category query-params & {:keys [normalize? convert? minify?] :as opts}]
   (get-transactions* key user (render "https://api.pocketsmith.com/v2/categories/{{id}}/transactions" category) query-params opts))
 
-(defn time-zone [date-time] (.getZone date-time))
+(defn time-zone [^org.joda.time.DateTime date-time]
+  (.getZone date-time))
 
 (defn last-month
   "Be sure you used `:convert?` on the user"
