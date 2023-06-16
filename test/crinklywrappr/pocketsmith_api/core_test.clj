@@ -105,7 +105,7 @@
     (is (= "" (ps/parse-local-datetime "" :date-time-no-ms)))
     (is (= :foobar (ps/parse-local-datetime :foobar :date-time-no-ms)))))
 
-(deftest timezone-test
+(deftest time-zones-test
   (with-redefs [client/get (mock-response [psgen/time-zones])]
     (is (= psgen/time-zones (into [] (ps/time-zones "key"))))
     (is (= (mapv :name psgen/time-zones)
@@ -360,3 +360,53 @@
                  (last (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
           (is (every? #(contains? % :id) (butlast (into [] (ps/category-transactions "key" user {:id 1} {})))))
           (is (every? #(contains? % :id) (butlast (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true))))))))))
+
+(deftest time-zone-test
+  (let [zones (mapv (comp t/time-zone-for-id :identifier)
+                    psgen/time-zones)]
+    (doseq [[zone dt] (mapv (juxt identity #(t/to-time-zone (t/now) %)) zones)]
+      (is (= zone (ps/time-zone dt))))))
+
+(deftest last-month-test
+  (let [zones (mapv (comp (fn [x] {:time-zone x})
+                       t/time-zone-for-id
+                       :identifier)
+                    psgen/time-zones)]
+    (doseq [{:keys [start-date end-date]} (mapv ps/last-month zones)]
+      (let [dt (t/now) dt (t/local-date (t/year dt) (t/month dt) (inc (t/day dt)))]
+        (is (t/before? start-date end-date))
+        (is (t/before? end-date dt))))))
+
+(deftest last-month-error-test
+  (is (thrown? AssertionError (ps/last-month {:time-zone (:identifier (first psgen/time-zones))}))))
+
+(deftest transaction-query-params-test
+  (let [user {:time-zone (t/time-zone-for-id "America/Chicago")}]
+    (let [m (ps/transaction-query-params
+             (assoc (ps/last-month user)
+                    :updated-since (t/to-time-zone
+                                    (t/minus (t/now) (t/days 2))
+                                    (:time-zone user))
+                    :search (gen/generate gen/string-ascii)
+                    :uncategorized? false
+                    :needs-review? false
+                    :type (gen/generate
+                           (gen/one-of [(gen/return :debit)
+                                        (gen/return :credit)]))))]
+      (is (string? (:start_date m)))
+      (is (string? (:end_date m)))
+      (is (string? (:updated_since m)))
+      (is (string? (:search m)))
+      (is (some? (#{"credit" "debit"} (:type m))))
+      (is (< -1 (:uncategorized m) 2))
+      (is (< -1 (:needs_review m) 2))
+      (is (< 9 (:per_page m) 101)))
+    (is (== 100 (:per_page (ps/transaction-query-params {:per-page 200}))))
+    (is (== 10 (:per_page (ps/transaction-query-params {:per-page 5}))))
+    (is (= (ps/transaction-query-params {}) {:per_page 100}))
+    (is (== 0 (:uncategorized (ps/transaction-query-params {:uncategorized? false}))))
+    (is (== 1 (:uncategorized (ps/transaction-query-params {:uncategorized? true}))))
+    (is (== 0 (:needs_review (ps/transaction-query-params {:needs-review? false}))))
+    (is (== 1 (:needs_review (ps/transaction-query-params {:needs-review? true}))))
+    (is (= "debit" (:type (ps/transaction-query-params {:type :debit}))))
+    (is (= "credit" (:type (ps/transaction-query-params {:type :credit}))))))

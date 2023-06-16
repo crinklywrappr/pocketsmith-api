@@ -15,7 +15,8 @@
                       [local :as l]
                       [format :as f]
                       [types :as ts]))
-  (:import [org.joda.money CurrencyUnit]))
+  (:import [org.joda.money CurrencyUnit]
+           [org.joda.time DateTime]))
 
 (def link-regex #"<([^>]+)>; rel=\"(first|next|last)\"")
 (def iso-8601 "yyyy-MM-dd'T'HH:mm:ssZ")
@@ -406,7 +407,7 @@
   [key user category query-params & {:keys [normalize? convert? minify?] :as opts}]
   (get-transactions* key user (render "https://api.pocketsmith.com/v2/categories/{{id}}/transactions" category) query-params opts))
 
-(defn time-zone [^org.joda.time.DateTime date-time]
+(defn time-zone [^DateTime date-time]
   (.getZone date-time))
 
 (defn last-month
@@ -420,17 +421,20 @@
     {:start-date (t/local-date year month 1)
      :end-date (t/local-date year month (t/day end-of-month))}))
 
+(defn date-time? [x]
+  (instance? DateTime x))
+
 (defn transaction-query-params
   "formats a request map for the transaction functions.
 
   start_date, end_date => local date objects, inclusive
   updated_since => datetime object, with time-zone (use to-time-zone, or from-time-zone)
   type => :debit or :credit
-  uncategorized, needs_review => boolean
+  uncategorized?, needs_review? => boolean
   search => search string
   per_page => number between 10 & 100"
   [{:keys [start-date end-date updated-since search
-           uncategorized type needs-review per-page]
+           uncategorized? type needs-review? per-page]
     :or {per-page 100}}]
   (cond-> {}
     (ts/local-date? start-date) (assoc :start_date
@@ -441,15 +445,15 @@
                                      (f/unparse-local-date
                                       (f/formatter :year-month-day)
                                       end-date))
-    (ts/date-time? updated-since) (assoc :updated_since
+    (date-time? updated-since) (assoc :updated_since
                                          (f/unparse
                                           (f/with-zone (f/formatter iso-8601)
                                             (time-zone updated-since))
                                           updated-since))
     (string? search) (assoc :search search)
-    (boolean? uncategorized) (assoc :uncategorized (if uncategorized 1 0))
-    (boolean? needs-review) (assoc :needs_review (if needs-review 1 0))
-    (or (= type :debit) (= type :credit)) (assoc :type type)
+    (boolean? uncategorized?) (assoc :uncategorized (if uncategorized? 1 0))
+    (boolean? needs-review?) (assoc :needs_review (if needs-review? 1 0))
+    (or (= type :debit) (= type :credit)) (assoc :type (name type))
     (number? per-page) (assoc :per_page
                               (cond
                                 (< per-page 10) 10
