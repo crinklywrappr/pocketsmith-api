@@ -243,36 +243,44 @@
     normalize? (r/map normalize-category) ))
 
 (defn ensure-bigdec-values-on-transaction [transaction]
-  (-> transaction
-      (update :amount bigdec)
-      (update :amount-in-base-currency bigdec)
-      (update :closing-balance bigdec)
-      (update :transaction-account ensure-bigdec-values-on-account)))
+  (if (error-response? transaction)
+    transaction
+    (-> transaction
+        (update :amount bigdec)
+        (update :amount-in-base-currency bigdec)
+        (update :closing-balance bigdec)
+        (update :transaction-account ensure-bigdec-values-on-account))))
 
 (defn convert-amounts-on-transaction [user transaction]
-  (let [currency-code (-> transaction :transaction-account :currency-code)
-        base-code (:base-currency-code user)]
-    (-> transaction
-        (update :amount amount->money currency-code)
-        (update :amount-in-base-currency amount->money base-code)
-        (update :closing-balance amount->money currency-code)
-        (update :transaction-account (partial convert-amounts-on-account user)))))
+  (if (error-response? transaction)
+    transaction
+    (let [currency-code (-> transaction :transaction-account :currency-code)
+          base-code (:base-currency-code user)]
+      (-> transaction
+          (update :amount amount->money currency-code)
+          (update :amount-in-base-currency amount->money base-code)
+          (update :closing-balance amount->money currency-code)
+          (update :transaction-account (partial convert-amounts-on-account user))))))
 
 (defn normalize-transaction [transaction]
-  (-> transaction
-      (assoc :transaction-account-id (-> transaction :transaction-account :id)
-             :category-id (-> transaction :category :id))
-      (dissoc :transaction-account :category)))
+  (if (error-response? transaction)
+    transaction
+    (-> transaction
+        (assoc :transaction-account-id (-> transaction :transaction-account :id)
+               :category-id (-> transaction :category :id))
+        (dissoc :transaction-account :category))))
 
 (defn minify-transaction [transaction]
-  (-> transaction
-      (select-keys [:id :payee :date :amount
-                    :amount-in-base-currency
-                    :closing-balance
-                    :transaction-account
-                    :category])
-      (update :transaction-account minify-account)
-      (update :category minify-category)))
+  (if (error-response? transaction)
+    transaction
+    (-> transaction
+        (select-keys [:id :payee :date :amount
+                      :amount-in-base-currency
+                      :closing-balance
+                      :transaction-account
+                      :category])
+        (update :transaction-account minify-account)
+        (update :category minify-category))))
 
 (defn user-transactions
   [key user query-params & {:keys [normalize? convert? minify?]}]
@@ -289,9 +297,11 @@
 (defn account-transactions
   [key user account query-params & {:keys [normalize? convert? minify?]}]
   (cond->>
-      (fetch-many
-       (render "https://api.pocketsmith.com/v2/transaction_accounts/{{id}}/transactions" account)
-       key {:query-params query-params})
+      (->>
+       (fetch-many
+        (render "https://api.pocketsmith.com/v2/transaction_accounts/{{id}}/transactions" account)
+        key {:query-params query-params})
+       (r/map ensure-bigdec-values-on-transaction))
     convert? (r/map (partial convert-amounts-on-transaction user))
     minify? (r/map minify-transaction)
     normalize? (r/map normalize-transaction)))
@@ -299,9 +309,11 @@
 (defn category-transactions
   [key user category query-params & {:keys [normalize? convert? minify?]}]
   (cond->>
-      (fetch-many
-       (render "https://api.pocketsmith.com/v2/categories/{{id}}/transactions" category)
-       key {:query-params query-params})
+      (->>
+       (fetch-many
+        (render "https://api.pocketsmith.com/v2/categories/{{id}}/transactions" category)
+        key {:query-params query-params})
+       (r/map ensure-bigdec-values-on-transaction))
     convert? (r/map (partial convert-amounts-on-transaction user))
     minify? (r/map minify-transaction)
     normalize? (r/map normalize-transaction)))

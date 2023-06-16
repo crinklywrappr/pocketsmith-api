@@ -259,3 +259,72 @@
                (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :minify? true :normalize? true)))
                (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :normalize? true)))
                (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))))))
+
+(deftest transactions-problem-test
+  (testing "zero transactions"
+    (with-redefs [client/get (mock-response [])]
+      (is (= [{:status 200
+               :body nil
+               :parse-error "class java.lang.NullPointerException"
+               :headers nil
+               :request {:uri "https://api.pocketsmith.com/v2/users/1/transactions"
+                         :key "key" :opts {:query-params {}}}}]
+             (into [] (ps/user-transactions "key" {:id 1} {}))
+             (into [] (ps/user-transactions "key" {:id 1} {} :convert? true :minify? true :normalize? true))))
+      (is (= [{:status 200
+               :body nil
+               :parse-error "class java.lang.NullPointerException"
+               :headers nil
+               :request {:uri "https://api.pocketsmith.com/v2/transaction_accounts/1/transactions"
+                         :key "key" :opts {:query-params {}}}}]
+             (into [] (ps/account-transactions "key" {:id 1} {:id 1} {}))
+             (into [] (ps/account-transactions "key" {:id 1} {:id 1} {} :convert? true :minify? true :normalize? true))))
+      (is (= [{:status 200
+               :body nil
+               :parse-error "class java.lang.NullPointerException"
+               :headers nil
+               :request {:uri "https://api.pocketsmith.com/v2/categories/1/transactions"
+                         :key "key" :opts {:query-params {}}}}]
+             (into [] (ps/category-transactions "key" {:id 1} {:id 1} {}))
+             (into [] (ps/category-transactions "key" {:id 1} {:id 1} {} :convert? true :minify? true :normalize? true))))))
+  (testing "problem fetching transactions"
+    (let [user (gen/generate psgen/user)
+          transactions (partition-all 3 (gen/generate (gen/vector (psgen/transaction user) 9)))]
+      (with-redefs [client/get (mock-error-response transactions 0)]
+        ;; user
+        (is (== 1 (count (into [] (ps/user-transactions "key" user {})))))
+        (is (ps/error-response? (first (into [] (ps/user-transactions "key" user {})))))
+        (is (= (into [] (ps/user-transactions "key" user {}))
+               (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true))))
+        ;; account
+        (is (== 1 (count (into [] (ps/account-transactions "key" user {:id 1} {})))))
+        (is (ps/error-response? (first (into [] (ps/account-transactions "key" user {:id 1} {})))))
+        (is (= (into [] (ps/account-transactions "key" user {:id 1} {}))
+               (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true))))
+        ;; category
+        (is (== 1 (count (into [] (ps/category-transactions "key" user {:id 1} {})))))
+        (is (ps/error-response? (first (into [] (ps/category-transactions "key" user {:id 1} {})))))
+        (is (= (into [] (ps/category-transactions "key" user {:id 1} {}))
+               (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
+      (with-redefs [client/get (mock-error-response transactions 1)]
+        ;; user
+        (is (> (count (into [] (ps/user-transactions "key" user {}))) 1))
+        (is (ps/error-response? (last (into [] (ps/user-transactions "key" user {})))))
+        (is (= (last (into [] (ps/user-transactions "key" user {})))
+               (last (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true)))))
+        (is (every? #(contains? % :id) (butlast (into [] (ps/user-transactions "key" user {})))))
+        (is (every? #(contains? % :id) (butlast (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true)))))
+        ;; account
+        (is (> (count (into [] (ps/account-transactions "key" user {:id 1} {}))) 1))
+        (is (ps/error-response? (last (into [] (ps/account-transactions "key" user {:id 1} {})))))
+        (is (= (last (into [] (ps/account-transactions "key" user {:id 1} {})))
+               (last (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
+        (is (every? #(contains? % :id) (butlast (into [] (ps/account-transactions "key" user {:id 1} {})))))
+        (is (every? #(contains? % :id) (butlast (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
+        ;; category
+        (is (> (count (into [] (ps/category-transactions "key" user {:id 1} {}))) 1))
+        (is (ps/error-response? (last (into [] (ps/category-transactions "key" user {:id 1} {})))))
+        (is (= (last (into [] (ps/category-transactions "key" user {:id 1} {})))
+               (last (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))
+        (is (every? #(contains? % :id) (butlast (into [] (ps/category-transactions "key" user {:id 1} {})))))
+        (is (every? #(contains? % :id) (butlast (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))))))
