@@ -1014,6 +1014,9 @@
     :abbreviation "+13",
     :identifier "Pacific/Tongatapu"}])
 
+(def timezone-name
+  (gen/one-of (mapv (comp gen/return :name) time-zones)))
+
 (def user
   (gen/let [mycurrency currency-with-country-code]
     (gen/hash-map
@@ -1053,8 +1056,7 @@
      :allowed-data-feeds gen/boolean
      :using-feed-support-requests gen/boolean
 
-     ;; incorrect
-     :time-zone gen/string-ascii)))
+     :time-zone timezone-name)))
 
 (def category
   (gen/let [[t1 t2] (order t/before? (gen/tuple (date-time) (date-time)))]

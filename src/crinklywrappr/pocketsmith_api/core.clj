@@ -49,7 +49,9 @@
   (fn [token]
     (if (nil? token)
       (fetch-one uri key opts)
-      (fetch-one token key {}))))
+      (if (contains? opts :query-params)
+        (fetch-one token key (dissoc opts :query-params))
+        (fetch-one token key opts)))))
 
 (defn next-page [{:keys [status headers]}]
   (when (and (== status 200) (contains? headers :link))
@@ -83,21 +85,20 @@
        (contains? response :request)))
 
 (defn convert-identifier-for-timezone [timezone]
-  (if (error-response? timezone)
-    timezone
-    (update timezone :identifier t/time-zone-for-id)))
+  (update timezone :identifier t/time-zone-for-id))
 
 (defn minify-timezone [timezone]
-  (if (error-response? timezone)
-    timezone
-    (select-keys timezone [:name :identifier])))
+  (select-keys timezone [:name :identifier]))
 
 (defn time-zones* [key]
   (fetch-many
    "https://api.pocketsmith.com/v2/time_zones"
-   key {:query-params {:per_page 100}}))
+   key {:throw-exceptions true
+        :query-params {:per_page 100}}))
 
-(defn time-zones [key & {:keys [convert? minify?]}]
+(defn time-zones
+  "Returns pocketsmith timezone information.  May throw an exception."
+  [key & {:keys [convert? minify?]}]
   (cond->> (time-zones* key)
     convert? (r/map convert-identifier-for-timezone)
     minify? (r/map minify-timezone)))
@@ -134,7 +135,10 @@
     (select-keys user [:name :login :email :week-start-day
                        :id :base-currency-code :time-zone])))
 
-(defn authorized-user [key & {:keys [convert? minify?]}]
+(defn authorized-user
+  "Returns the authorized user map.
+    May throw an exception if `convert?` is `true`."
+  [key & {:keys [convert? minify?]}]
   (let [time-zones (when convert?
                      (->> (time-zones key :convert? true :minify? true)
                           (r/map (comp vec vals))
@@ -156,9 +160,6 @@
 
 (defn bigdec? [x]
   (instance? BigDecimal x))
-
-(defn nonempty-string? [s]
-  (and (string? s) (seq s)))
 
 (defn currency? [x]
   (instance? CurrencyUnit x))

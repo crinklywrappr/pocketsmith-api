@@ -104,16 +104,32 @@
     (is (= "" (ps/parse-local-datetime "" :date-time-no-ms)))
     (is (= :foobar (ps/parse-local-datetime :foobar :date-time-no-ms)))))
 
+(deftest timezone-test
+  (with-redefs [client/get (mock-response [psgen/time-zones])]
+    (is (= psgen/time-zones (into [] (ps/time-zones "key"))))
+    (is (= (mapv :name psgen/time-zones)
+           (->> (ps/time-zones "key" :convert? true)
+                (into []) (mapv :name))))
+    (is (= (mapv :name psgen/time-zones)
+           (->> (ps/time-zones "key" :minify? true)
+                (into []) (mapv :name))))
+    (is (= (mapv :name psgen/time-zones)
+           (->> (ps/time-zones "key" :convert? true :minify? true)
+                (into []) (mapv :name))))))
+
 (deftest authorized-user-test
-  (let [user (gen/generate psgen/user)]
-    (testing "happy path"
+  (testing "happy path"
+    (let [user (gen/generate psgen/user)]
       (with-redefs [ps/time-zones* (mock-time-zones*)
                     client/get (mock-response [user])]
         (is (= user (ps/authorized-user "key")))
         (is (contains? (ps/authorized-user "key" :convert? true) :id))
         (is (contains? (ps/authorized-user "key" :minify? true) :id))
-        (is (contains? (ps/authorized-user "key" :convert? true :minify? true) :id))))
-    (testing "an error should make optional steps a no-op"
+        (is (contains? (ps/authorized-user "key" :convert? true :minify? true) :id))))))
+
+(deftest authorized-user-problem-test
+  (testing "an error should make optional steps a no-op"
+    (let [user (gen/generate psgen/user)]
       (with-redefs [ps/time-zones* (mock-time-zones*)
                     client/get (mock-error-response [user] 0)]
         (is (== 500 (:status (ps/authorized-user "key"))))
