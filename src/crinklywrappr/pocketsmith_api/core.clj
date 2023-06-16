@@ -315,7 +315,8 @@
           (zip/root z)
           (recur (zip/next (f z))))))))
 
-(defn categories [key user & {:keys [flatten? normalize? convert? minify?]}]
+(defn categories
+  [key user & {:keys [flatten? normalize? convert? minify?]}]
   (cond->>
       (fetch-many
        (render "https://api.pocketsmith.com/v2/users/{{id}}/categories" user)

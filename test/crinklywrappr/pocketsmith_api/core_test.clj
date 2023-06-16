@@ -17,7 +17,8 @@
                                 [currencies :as mc]
                                 [format :as mf])
             (clj-time [core :as t]
-                      [format :as f])))
+                      [format :as f]
+                      [types :as ts])))
 
 (deftest parse-link-test
   (testing "parse-link works"
@@ -110,6 +111,9 @@
     (is (= (mapv :name psgen/time-zones)
            (->> (ps/time-zones "key" :convert? true)
                 (into []) (mapv :name))))
+    (is (every? ts/time-zone?
+                (->> (ps/time-zones "key" :convert? true)
+                     (into []) (mapv :identifier))))
     (is (= (mapv :name psgen/time-zones)
            (->> (ps/time-zones "key" :minify? true)
                 (into []) (mapv :name))))
