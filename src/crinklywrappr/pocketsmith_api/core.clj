@@ -13,9 +13,11 @@
                                 [format :as mf])
             (clj-time [core :as t]
                       [local :as l]
-                      [format :as f])))
+                      [format :as f]
+                      [types :as ts])))
 
 (def link-regex #"<([^>]+)>; rel=\"(first|next|last)\"")
+(def iso-8601 "yyyy-MM-dd'T'HH:mm:ssZ")
 
 (defn parse-link [link]
   (reduce
@@ -79,6 +81,29 @@
        (contains? response :body)
        (contains? response :request)))
 
+(defn convert-identifier-for-timezone [timezone]
+  (if (error-response? timezone)
+    timezone
+    (update timezone :identifier t/time-zone-for-id)))
+
+(defn minify-timezone [timezone]
+  (if (error-response? timezone)
+    timezone
+    (select-keys timezone [:name :identifier])))
+
+(defn time-zones* [key]
+  (fetch-many
+   "https://api.pocketsmith.com/v2/time_zones"
+   key {:query-params {:per_page 100}}))
+
+(defn time-zones [key & {:keys [convert? minify?]}]
+  (cond->> (time-zones* key)
+    convert? (r/map convert-identifier-for-timezone)
+    minify? (r/map minify-timezone)))
+
+(defn code->currency [x]
+  (mc/for-code (sg/upper-case x)))
+
 (defn convert-datetime-on-user [user]
   (if (error-response? user)
     user
@@ -92,17 +117,34 @@
         (update :forecast-start-date parse-local-datetime :year-month-day)
         (update :forecast-end-date parse-local-datetime :year-month-day))))
 
+(defn convert-currency-code-on-user [user]
+  (if (error-response? user)
+    user
+    (update user :base-currency-code code->currency)))
+
+(defn convert-timezone-on-user [time-zones user]
+  (if (error-response? user)
+    user
+    (update user :time-zone (partial get time-zones))))
+
 (defn minify-user [user]
   (if (error-response? user)
     user
-    (select-keys user [:id :name :login :email :base-currency-code :time-zone])))
+    (select-keys user [:name :login :email :week-start-day
+                       :id :base-currency-code :time-zone])))
 
 (defn authorized-user [key & {:keys [convert? minify?]}]
-  (letfn [(get-page [{:keys [status body] :as response}]
-            (if (== status 200) body response))]
-    (cond->> (get-page (fetch-one "https://api.pocketsmith.com/v2/me" key {}))
-      convert? convert-datetime-on-user
-      minify? minify-user)))
+  (let [time-zones (when convert?
+                     (->> (time-zones key :convert? true :minify? true)
+                          (r/map (comp vec vals))
+                          (into {})))]
+    (letfn [(get-page [{:keys [status body] :as response}]
+              (if (== status 200) body response))]
+      (cond->> (get-page (fetch-one "https://api.pocketsmith.com/v2/me" key {}))
+        convert? convert-datetime-on-user
+        convert? convert-currency-code-on-user
+        (seq time-zones) (convert-timezone-on-user time-zones)
+        minify? minify-user))))
 
 (defn by-name-or-title [name-or-title xs]
   (some
@@ -113,13 +155,20 @@
 
 (defn bigdec? [x] (instance? BigDecimal x))
 
+(defn nonempty-string? [s]
+  (and (string? s) (seq s)))
+
+(defn currency? [x]
+  (instance? org.joda.money.CurrencyUnit x))
+
 (defn amount->money [amount code]
-  (if (and (bigdec? amount) (string? code) (seq code))
-    (let [currency (mc/for-code (sg/upper-case code))]
+  (if-let [currency (if (nonempty-string? code) (code->currency code) code)]
+    (if (and (bigdec? amount) (currency? currency))
       (->> currency .getDecimalPlaces
            (.movePointRight amount)
            str Long/parseLong
-           (ma/of-minor currency)))
+           (ma/of-minor currency))
+      amount)
     amount))
 
 (defn long->bigdec [x]
@@ -134,6 +183,13 @@
         (update :current-balance long->bigdec)
         (update :safe-balance-in-base-currency long->bigdec)
         (update :safe-balance long->bigdec))))
+
+(defn convert-currencies-on-account [account]
+  (if (error-response? account)
+    account
+    (-> account
+        (update-in [:institution :currency-code] code->currency)
+        (update :currency-code code->currency))))
 
 (defn convert-amounts-on-account [user account]
   (if (error-response? account)
@@ -172,10 +228,11 @@
       (->>
        (fetch-many
         (render "https://api.pocketsmith.com/v2/users/{{id}}/transaction_accounts" user)
-        key {})
+        key {:query-params {:per_page 100}})
        (r/map ensure-bigdec-values-on-account))
     convert? (r/map (comp convert-datetime-on-account
-                      (partial convert-amounts-on-account user)))
+                      (partial convert-amounts-on-account user)
+                      convert-currencies-on-account))
     minify? (r/map minify-account)))
 
 (defn category? [x]
@@ -236,7 +293,7 @@
   (cond->>
       (fetch-many
        (render "https://api.pocketsmith.com/v2/users/{{id}}/categories" user)
-       key {})
+       key {:query-params {:per_page 100}})
     convert? (r/map (partial modify-categories convert-datetime-on-category))
     minify? (r/map (partial modify-categories minify-category))
     (or flatten? normalize?) (r/mapcat flatten-category)
@@ -251,6 +308,11 @@
         (update :closing-balance bigdec)
         (update :transaction-account ensure-bigdec-values-on-account))))
 
+(defn convert-currencies-on-transaction [transaction]
+  (if (error-response? transaction)
+    transaction
+    (update transaction :transaction-account convert-currencies-on-account)))
+
 (defn convert-amounts-on-transaction [user transaction]
   (if (error-response? transaction)
     transaction
@@ -261,6 +323,14 @@
           (update :amount-in-base-currency amount->money base-code)
           (update :closing-balance amount->money currency-code)
           (update :transaction-account (partial convert-amounts-on-account user))))))
+
+(defn convert-datetime-on-transaction [transaction]
+  (if (error-response? transaction)
+    transaction
+    (-> transaction
+        (update :created-at parse-datetime :date-time-no-ms)
+        (update :updated-at parse-datetime :date-time-no-ms)
+        (update :date parse-local-datetime :year-month-day))))
 
 (defn normalize-transaction [transaction]
   (if (error-response? transaction)
@@ -288,9 +358,11 @@
       (->>
        (fetch-many
         (render "https://api.pocketsmith.com/v2/users/{{id}}/transactions" user)
-        key {:query-params query-params})
+        key {:query-params (merge {:per_page 100} query-params)})
        (r/map ensure-bigdec-values-on-transaction))
-    convert? (r/map (partial convert-amounts-on-transaction user))
+    convert? (r/map (comp convert-datetime-on-transaction
+                          (partial convert-amounts-on-transaction user)
+                          convert-currencies-on-transaction))
     minify? (r/map minify-transaction)
     normalize? (r/map normalize-transaction)))
 
@@ -300,9 +372,11 @@
       (->>
        (fetch-many
         (render "https://api.pocketsmith.com/v2/transaction_accounts/{{id}}/transactions" account)
-        key {:query-params query-params})
+        key {:query-params (merge {:per_page 100} query-params)})
        (r/map ensure-bigdec-values-on-transaction))
-    convert? (r/map (partial convert-amounts-on-transaction user))
+    convert? (r/map (comp convert-datetime-on-transaction
+                          (partial convert-amounts-on-transaction user)
+                          convert-currencies-on-transaction))
     minify? (r/map minify-transaction)
     normalize? (r/map normalize-transaction)))
 
@@ -312,8 +386,56 @@
       (->>
        (fetch-many
         (render "https://api.pocketsmith.com/v2/categories/{{id}}/transactions" category)
-        key {:query-params query-params})
+        key {:query-params (merge {:per_page 100} query-params)})
        (r/map ensure-bigdec-values-on-transaction))
-    convert? (r/map (partial convert-amounts-on-transaction user))
+    convert? (r/map (comp convert-datetime-on-transaction
+                       (partial convert-amounts-on-transaction user)
+                       convert-currencies-on-transaction))
     minify? (r/map minify-transaction)
     normalize? (r/map normalize-transaction)))
+
+(defn time-zone [date-time] (.getZone date-time))
+
+(defn last-month [time-zone-id]
+  (let [dt (t/to-time-zone (t/now) (t/time-zone-for-id time-zone-id))
+        a-month-ago (t/minus dt (t/months 1))
+        end-of-month (t/minus dt (t/days (t/day dt)))
+        year (t/year a-month-ago) month (t/month a-month-ago)]
+    {:start-date (t/local-date year month 1)
+     :end-date (t/local-date year month (t/day end-of-month))}))
+
+(defn transaction-query-params
+  "formats a request map for the transaction functions.
+
+  start_date, end_date => local date objects, inclusive
+  updated_since => datetime object, with time-zone (use to-time-zone, or from-time-zone)
+  type => :debit or :credit
+  uncategorized, needs_review => boolean
+  search => search string
+  per_page => number between 10 & 100"
+  [{:keys [start-date end-date updated-since search
+           uncategorized type needs-review per-page]
+    :or {per-page 100}}]
+  (cond-> {}
+    (ts/local-date? start-date) (assoc :start_date
+                                       (f/unparse-local-date
+                                        (f/formatter :year-month-day)
+                                        start-date))
+    (ts/local-date? end-date) (assoc :end_date
+                                     (f/unparse-local-date
+                                      (f/formatter :year-month-day)
+                                      end-date))
+    (ts/date-time? updated-since) (assoc :updated_since
+                                         (f/unparse
+                                          (f/with-zone (f/formatter iso-8601)
+                                            (time-zone updated-since))
+                                          updated-since))
+    (string? search) (assoc :search search)
+    (boolean? uncategorized) (assoc :uncategorized (if uncategorized 1 0))
+    (boolean? needs-review) (assoc :needs_review (if needs-review 1 0))
+    (or (= type :debit) (= type :credit)) (assoc :type type)
+    (number? per-page) (assoc :per_page
+                              (cond
+                                (< per-page 10) 10
+                                (> per-page 100) 100
+                                :else per-page))))
