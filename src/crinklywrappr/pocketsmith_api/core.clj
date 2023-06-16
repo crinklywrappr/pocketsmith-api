@@ -368,47 +368,30 @@
         (update :transaction-account minify-account*)
         (update :category minify-category))))
 
-(defn user-transactions
-  [key user query-params & {:keys [normalize? convert? minify?]}]
+(defn get-transactions*
+  [key user uri query-params {:keys [normalize? convert? minify?]}]
   (cond->>
       (->>
-       (fetch-many
-        (render "https://api.pocketsmith.com/v2/users/{{id}}/transactions" user)
-        key {:query-params (merge {:per_page 100} query-params)})
+       {:query-params (merge {:per_page 100} query-params)}
+       (fetch-many uri key)
        (r/map ensure-bigdec-values-on-transaction))
     convert? (r/map (comp convert-datetime-on-transaction
                           (partial convert-amounts-on-transaction user)
                           convert-currencies-on-transaction))
     minify? (r/map minify-transaction)
     normalize? (r/map normalize-transaction)))
+
+(defn user-transactions
+  [key user query-params & {:keys [normalize? convert? minify?] :as opts}]
+  (get-transactions* key user (render "https://api.pocketsmith.com/v2/users/{{id}}/transactions" user) query-params opts))
 
 (defn account-transactions
-  [key user account query-params & {:keys [normalize? convert? minify?]}]
-  (cond->>
-      (->>
-       (fetch-many
-        (render "https://api.pocketsmith.com/v2/transaction_accounts/{{id}}/transactions" account)
-        key {:query-params (merge {:per_page 100} query-params)})
-       (r/map ensure-bigdec-values-on-transaction))
-    convert? (r/map (comp convert-datetime-on-transaction
-                          (partial convert-amounts-on-transaction user)
-                          convert-currencies-on-transaction))
-    minify? (r/map minify-transaction)
-    normalize? (r/map normalize-transaction)))
+  [key user account query-params & {:keys [normalize? convert? minify?] :as opts}]
+  (get-transactions* key user (render "https://api.pocketsmith.com/v2/transaction_accounts/{{id}}/transactions" account) query-params opts))
 
 (defn category-transactions
-  [key user category query-params & {:keys [normalize? convert? minify?]}]
-  (cond->>
-      (->>
-       (fetch-many
-        (render "https://api.pocketsmith.com/v2/categories/{{id}}/transactions" category)
-        key {:query-params (merge {:per_page 100} query-params)})
-       (r/map ensure-bigdec-values-on-transaction))
-    convert? (r/map (comp convert-datetime-on-transaction
-                       (partial convert-amounts-on-transaction user)
-                       convert-currencies-on-transaction))
-    minify? (r/map minify-transaction)
-    normalize? (r/map normalize-transaction)))
+  [key user category query-params & {:keys [normalize? convert? minify?] :as opts}]
+  (get-transactions* key user (render "https://api.pocketsmith.com/v2/categories/{{id}}/transactions" category) query-params opts))
 
 (defn time-zone [date-time] (.getZone date-time))
 
