@@ -116,23 +116,23 @@
 
 (defspec category-test 100
   (prop/for-all [{:keys [num-elements categories]} (psgen/categories-preserve-invariants)]
-                (let [ids (get-category-ids categories)]
-                  (with-redefs [client/get (mock-response (partition-all 10 categories))]
-                    (is (== num-elements (count ids)) "sanity check #1")
-                    (is (= categories (into [] (ps/categories "key" {:id 1}))) "sanity check #2")
-                    (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :convert? true))) ids)
-                        "convert should not add or lose categories, and id uniqueness should be preseved")
-                    (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :minify? true))) ids)
-                        "minify should not add or lose categories, and id uniqueness should be preseved")
-                    (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :convert? true :minify? true))) ids)
-                        "convert + minify should not add or lose categories, and id uniqueness should be preseved")
-                    (is (= (mapv #(dissoc % :parents) (into [] (ps/categories "key" {:id 1} :flatten? true)))
-                           (mapv #(dissoc % :parents) (into [] (ps/categories "key" {:id 1} :normalize? true))))
-                        ":normalize? forces :flatten?, they only differ by :parents")
-                    (is (= (set (mapv :id (into [] (ps/categories "key" {:id 1} :normalize? true)))) ids)
-                        "normalize/flatten should not add or lose categories, and id uniqueness should be preseved")
-                    (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true))) ids)
-                        "convert + minify + normalize should not add or lose categories, and id uniqueness should be preseved")))))
+    (let [ids (get-category-ids categories)]
+      (with-redefs [client/get (mock-response (partition-all 10 categories))]
+        (is (== num-elements (count ids)) "sanity check #1")
+        (is (= categories (into [] (ps/categories "key" {:id 1}))) "sanity check #2")
+        (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :convert? true))) ids)
+            "convert should not add or lose categories, and id uniqueness should be preseved")
+        (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :minify? true))) ids)
+            "minify should not add or lose categories, and id uniqueness should be preseved")
+        (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :convert? true :minify? true))) ids)
+            "convert + minify should not add or lose categories, and id uniqueness should be preseved")
+        (is (= (mapv #(dissoc % :parents) (into [] (ps/categories "key" {:id 1} :flatten? true)))
+               (mapv #(dissoc % :parents) (into [] (ps/categories "key" {:id 1} :normalize? true))))
+            ":normalize? forces :flatten?, they only differ by :parents")
+        (is (= (set (mapv :id (into [] (ps/categories "key" {:id 1} :normalize? true)))) ids)
+            "normalize/flatten should not add or lose categories, and id uniqueness should be preseved")
+        (is (= (get-category-ids (into [] (ps/categories "key" {:id 1} :convert? true :minify? true :normalize? true))) ids)
+            "convert + minify + normalize should not add or lose categories, and id uniqueness should be preseved")))))
 
 (deftest category-problem-test
   (testing "zero categories"
@@ -162,25 +162,25 @@
 
 (defspec money-test 10
   (prop/for-all [monies (apply gen/tuple (mapv #(psgen/money* % {}) (mc/registered-currencies)))]
-                (is (= (vec monies)
-                       (mapv
-                        (fn [money]
-                          (let [code (sg/lower-case (ma/currency-of money))
-                                amount (psgen/money->bigdec money)]
-                            (ps/amount->money amount code)))
-                        monies)))))
+    (is (= (vec monies)
+           (mapv
+            (fn [money]
+              (let [code (sg/lower-case (ma/currency-of money))
+                    amount (psgen/money->bigdec money)]
+                (ps/amount->money amount code)))
+            monies)))))
 
 (defspec usd-test 100
   (prop/for-all [money (psgen/money* mc/USD {})]
-                (let [code (sg/lower-case (ma/currency-of money))
-                      amount (psgen/money->bigdec money)]
-                  (is (= money (ps/amount->money amount code))))))
+    (let [code (sg/lower-case (ma/currency-of money))
+          amount (psgen/money->bigdec money)]
+      (is (= money (ps/amount->money amount code))))))
 
 (defspec jpy-test 100
   (prop/for-all [money (psgen/money* mc/JPY {})]
-                (let [code (sg/lower-case (ma/currency-of money))
-                      amount (psgen/money->bigdec money)]
-                  (is (= money (ps/amount->money amount code))))))
+    (let [code (sg/lower-case (ma/currency-of money))
+          amount (psgen/money->bigdec money)]
+      (is (= money (ps/amount->money amount code))))))
 
 (deftest amount->money-conditional-test
   (is (= "" (ps/amount->money "" "")))
@@ -189,11 +189,11 @@
 
 (defspec account-test 50
   (prop/for-all [user psgen/user]
-                (let [accounts (gen/generate (gen/vector (psgen/transaction-account user) 1 24))]
-                  (with-redefs [client/get (mock-response (partition-all 10 accounts))]
-                    (is (= accounts (into [] (ps/accounts "key" user))))
-                    (is (= (mapv :id accounts) (mapv :id (into [] (ps/accounts "key" user :convert? true)))))
-                    (is (= (mapv :id accounts) (mapv :id (into [] (ps/accounts "key" user :minify? true)))))))))
+    (let [accounts (gen/generate (gen/vector (psgen/transaction-account user) 1 24))]
+      (with-redefs [client/get (mock-response (partition-all 10 accounts))]
+        (is (= accounts (into [] (ps/accounts "key" user))))
+        (is (= (mapv :id accounts) (mapv :id (into [] (ps/accounts "key" user :convert? true)))))
+        (is (= (mapv :id accounts) (mapv :id (into [] (ps/accounts "key" user :minify? true)))))))))
 
 (deftest by-name-or-title-test
   (let [xs (mapv (fn [n] {:name (str n)}) (range 20))]
@@ -227,3 +227,35 @@
                (last (into [] (ps/accounts "key" user :convert? true :minify? true)))))
         (is (every? #(contains? % :id) (butlast (into [] (ps/accounts "key" user)))))
         (is (every? #(contains? % :id) (butlast (into [] (ps/accounts "key" user :convert? true :minify? true)))))))))
+
+(defspec transaction-test 10
+  (prop/for-all [user psgen/user]
+    (let [transactions (gen/generate (gen/vector (psgen/transaction user) 1 100))]
+      (with-redefs [client/get (mock-response (partition-all 10 transactions))]
+        (is (= (mapv :id transactions)
+               (mapv :id (into [] (ps/user-transactions "key" user {})))
+               (mapv :id (into [] (ps/user-transactions "key" user {} :convert? true)))
+               (mapv :id (into [] (ps/user-transactions "key" user {} :minify? true)))
+               (mapv :id (into [] (ps/user-transactions "key" user {} :normalize? true)))
+               (mapv :id (into [] (ps/user-transactions "key" user {} :convert? true :minify? true)))
+               (mapv :id (into [] (ps/user-transactions "key" user {} :minify? true :normalize? true)))
+               (mapv :id (into [] (ps/user-transactions "key" user {} :convert? true :normalize? true)))
+               (mapv :id (into [] (ps/user-transactions "key" user {} :convert? true :minify? true :normalize? true)))
+
+               (mapv :id (into [] (ps/account-transactions "key" user {:id 1} {})))
+               (mapv :id (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true)))
+               (mapv :id (into [] (ps/account-transactions "key" user {:id 1} {} :minify? true)))
+               (mapv :id (into [] (ps/account-transactions "key" user {:id 1} {} :normalize? true)))
+               (mapv :id (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true)))
+               (mapv :id (into [] (ps/account-transactions "key" user {:id 1} {} :minify? true :normalize? true)))
+               (mapv :id (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :normalize? true)))
+               (mapv :id (into [] (ps/account-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))
+
+               (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {})))
+               (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true)))
+               (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :minify? true)))
+               (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :normalize? true)))
+               (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true)))
+               (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :minify? true :normalize? true)))
+               (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :normalize? true)))
+               (mapv :id (into [] (ps/category-transactions "key" user {:id 1} {} :convert? true :minify? true :normalize? true)))))))))

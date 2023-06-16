@@ -347,8 +347,8 @@
      :payee gen/string-ascii
      :original-payee gen/string-ascii
 
-     :amount (gen/fmap money->bigdec (money* (mc/for-code (sg/upper-case (:currency-code acct)))))
-     :closing-balance (gen/fmap money->bigdec (money* (mc/for-code (sg/upper-case (:currency-code acct)))))
+     :amount (gen/fmap money->bigdec (money* (mc/for-code (sg/upper-case (:currency-code acct))) {}))
+     :closing-balance (gen/fmap money->bigdec (money* (mc/for-code (sg/upper-case (:currency-code acct))) {}))
      :amount-in-base-currency (gen/fmap money->bigdec (money* (mc/for-code (sg/upper-case (:base-currency-code user))) {}))
 
      :created-at (string-date t1 :date-time-no-ms)

@@ -125,7 +125,7 @@
 (defn long->bigdec [x]
   (if (instance? Long x) (clojure.core/bigdec x) x))
 
-(defn ensure-bigdec-values [account]
+(defn ensure-bigdec-values-on-account [account]
   (if (error-response? account)
     account
     (-> account
@@ -173,7 +173,7 @@
        (fetch-many
         (render "https://api.pocketsmith.com/v2/users/{{id}}/transaction_accounts" user)
         key {})
-       (r/map ensure-bigdec-values))
+       (r/map ensure-bigdec-values-on-account))
     convert? (r/map (comp convert-datetime-on-account
                       (partial convert-amounts-on-account user)))
     minify? (r/map minify-account)))
@@ -242,6 +242,13 @@
     (or flatten? normalize?) (r/mapcat flatten-category)
     normalize? (r/map normalize-category) ))
 
+(defn ensure-bigdec-values-on-transaction [transaction]
+  (-> transaction
+      (update :amount bigdec)
+      (update :amount-in-base-currency bigdec)
+      (update :closing-balance bigdec)
+      (update :transaction-account ensure-bigdec-values-on-account)))
+
 (defn convert-amounts-on-transaction [user transaction]
   (let [currency-code (-> transaction :transaction-account :currency-code)
         base-code (:base-currency-code user)]
@@ -270,9 +277,11 @@
 (defn user-transactions
   [key user query-params & {:keys [normalize? convert? minify?]}]
   (cond->>
-      (fetch-many
-       (render "https://api.pocketsmith.com/v2/users/{{id}}/transactions" user)
-       key {:query-params query-params})
+      (->>
+       (fetch-many
+        (render "https://api.pocketsmith.com/v2/users/{{id}}/transactions" user)
+        key {:query-params query-params})
+       (r/map ensure-bigdec-values-on-transaction))
     convert? (r/map (partial convert-amounts-on-transaction user))
     minify? (r/map minify-transaction)
     normalize? (r/map normalize-transaction)))
