@@ -5,7 +5,7 @@
   <artifactId>pocketsmith-api</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <name>com.github.crinklywrappr/pocketsmith-api</name>
-  <description>FIXME: my new library.</description>
+  <description>Small library for interacting with Pocketsmith using their REST API.</description>
   <url>https://github.com/crinklywrappr/pocketsmith-api</url>
   <licenses>
     <license>
