@@ -279,7 +279,7 @@
   (zip/zipper
    category? :children
    (fn [{:keys [id] :as node} children]
-     (assoc node :children (mapv #(assoc % :parent-id id) children)))
+     (assoc node :children children))
    category))
 
 (defn flatten-category [category]
