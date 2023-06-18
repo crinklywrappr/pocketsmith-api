@@ -79,7 +79,10 @@
     (f/parse-local (f/formatter fmt) dt)
     dt))
 
-(defn error-response? [response]
+(defn error-response?
+  "Predicate for determining if an element
+  represents a network error or parse error"
+  [response]
   (and (contains? response :status)
        (contains? response :headers)
        (contains? response :body)
@@ -98,7 +101,8 @@
         :query-params {:per_page 100}}))
 
 (defn time-zones
-  "Returns pocketsmith timezone information.  May throw an exception."
+  "Returns pocketsmith timezone information.
+  May throw an ExceptionInfo."
   [key & {:keys [convert? minify?]}]
   (cond->> (time-zones* key)
     convert? (r/map convert-identifier-for-timezone)
@@ -137,8 +141,8 @@
                        :id :base-currency-code :time-zone])))
 
 (defn authorized-user
-  "Returns the authorized user map.
-    May throw an exception if `convert?` is `true`."
+  "Returns the authorized user.
+  May throw an ExceptionInfo if `convert?` is `true`."
   [key & {:keys [convert? minify?]}]
   (let [time-zones (when convert?
                      (->> (time-zones key :convert? true :minify? true)
@@ -249,6 +253,9 @@
     (minify-account* account)))
 
 (defn accounts
+  "Returns TransactionAccounts.
+  Expects `base-currency-code` to be a Joda Currency object.
+  Throws an AssertionError if using `convert?` and that requirement isn't satisfied."
   [key user & {:keys [convert? minify?]}]
   {:pre [(or (and convert? (currency? (:base-currency-code user))) (not convert?))]}
   (cond->>
@@ -317,6 +324,9 @@
           (recur (zip/next (f z))))))))
 
 (defn categories
+  "Returns Categories.  Should not throw an exception.
+  If there was a network problem, or a parse error,
+  the last element will satisfy `error-response?`."
   [key user & {:keys [flatten? normalize? convert? minify?]}]
   (cond->>
       (fetch-many
@@ -325,7 +335,7 @@
     convert? (r/map (partial modify-categories convert-datetime-on-category))
     minify? (r/map (partial modify-categories minify-category))
     (or flatten? normalize?) (r/mapcat flatten-category)
-    normalize? (r/map normalize-category) ))
+    normalize? (r/map normalize-category)))
 
 (defn ensure-bigdec-values-on-transaction [transaction]
   (if (error-response? transaction)
@@ -396,14 +406,23 @@
     normalize? (r/map normalize-transaction)))
 
 (defn user-transactions
+  "Returns Transactions.  Should not throw an exception.
+  If there was a network problem, or a parse error,
+  the last element will satisfy `error-response?`."
   [key user query-params & {:keys [normalize? convert? minify?] :as opts}]
   (get-transactions* key user (render "https://api.pocketsmith.com/v2/users/{{id}}/transactions" user) query-params opts))
 
 (defn account-transactions
+  "Returns Transactions.  Should not throw an exception.
+  If there was a network problem, or a parse error,
+  the last element will satisfy `error-response?`."
   [key user account query-params & {:keys [normalize? convert? minify?] :as opts}]
   (get-transactions* key user (render "https://api.pocketsmith.com/v2/transaction_accounts/{{id}}/transactions" account) query-params opts))
 
 (defn category-transactions
+  "Returns Transactions.  Should not throw an exception.
+  If there was a network problem, or a parse error,
+  the last element will satisfy `error-response?`."
   [key user category query-params & {:keys [normalize? convert? minify?] :as opts}]
   (get-transactions* key user (render "https://api.pocketsmith.com/v2/categories/{{id}}/transactions" category) query-params opts))
 
@@ -411,7 +430,10 @@
   (.getZone date-time))
 
 (defn last-month
-  "Be sure you used `:convert?` on the user"
+  "Returns a map with `:start_date` and `:end_date` keys.
+  Intended to be passed to `transaction-query-params`.
+  Will throw an assertion error if `user.time-zone`
+  is not a Joda TimeZone"
   [{:keys [time-zone] :as user}]
   {:pre [(ts/time-zone? time-zone)]}
   (let [dt (t/to-time-zone (t/now) time-zone)
