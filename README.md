@@ -5,7 +5,7 @@ Clojure library for interacting with the [Pocketsmith](https://www.pocketsmith.c
 # Coordinates
 
 ```clojure
-com.github.crinklywrappr/pocketsmith-api {:mvn/version "1.0.35"}
+com.github.crinklywrappr/pocketsmith-api {:mvn/version "1.0.37"}
 ```
 
 # Usage
