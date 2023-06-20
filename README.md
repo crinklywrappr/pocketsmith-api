@@ -1,16 +1,26 @@
 # com.github.crinklywrappr/pocketsmith-api
 
-Small library for interacting with [Pocketsmith](https://www.pocketsmith.com/) using their REST API.
+Clojure library for interacting with the [Pocketsmith](https://www.pocketsmith.com/) REST API.  Small, opinionated, and hand-crafted.
+
+# Coordinates
+
+```clojure
+com.github.crinklywrappr/pocketsmith-api {:mvn/version "1.0.35"}
+```
 
 # Usage
 
-An opinionated, hand-crafted, wrapper around a few of the read-only pocketsmith routes.
+First, require the library and define your user key.  You can generate a key on the dashboard from your pocketsmith account.
 
 ```clojure
 (require '[crinklywrappr.pocketsmith-api.core :as ps])
 
 (def mykey "xxx")
+```
 
+Then, begin querying.
+
+```clojure
 (def myuser (ps/authorized-user mykey :convert? true :minify? true))
 ;=> {:name "John Doe",
      :login "my-username",
@@ -59,7 +69,7 @@ The same boolean options can be provided to each function
 - `convert?` -> converts datetimes, money, currency, and timezones to an appropriate joda object
 - `minify?` -> returns a map with the bare minimum keys
 
-The transaction functions also take query-parameters. The following functions help you construct a reasonable query.
+The transaction functions also take query-parameters. `transaction-query-params` helps you construct a reasonable query.
 ```clojure
 -------------------------
 crinklywrappr.pocketsmith-api.core/transaction-query-params
