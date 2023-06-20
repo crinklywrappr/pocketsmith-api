@@ -120,6 +120,10 @@ Check out `build.clj` for functions that can be ran with `clojure -T:build <func
 - VES
 - ZMK
 
+# Articles
+
+- [Having fun with money](https://dev.to/crinklywrappr/having-fun-with-money-2c6)
+
 ## License
 
 Copyright © 2023 Crinklywrappr
