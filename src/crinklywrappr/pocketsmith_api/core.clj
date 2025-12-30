@@ -387,7 +387,7 @@
                       :amount-in-base-currency
                       :closing-balance
                       :transaction-account
-                      :category])
+                      :category :is-transfer])
         (update :transaction-account minify-account*)
         (update :category minify-category))))
 
@@ -468,12 +468,12 @@
                                       (f/formatter :year-month-day)
                                       end-date))
     (date-time? updated-since) (assoc :updated_since
-                                         (f/unparse
-                                          (f/with-zone (f/formatter iso-8601)
-                                            (time-zone updated-since))
-                                          updated-since))
+                                      (f/unparse
+                                       (f/with-zone (f/formatter iso-8601)
+                                         (time-zone updated-since))
+                                       updated-since))
     (string? search) (assoc :search search)
-    (boolean? uncategorized?) (assoc :uncategorized (if uncategorized? 1 0))
+    (boolean? uncategorized?) (assoc :uncategorised (if uncategorized? 1 0))
     (boolean? needs-review?) (assoc :needs_review (if needs-review? 1 0))
     (or (= type :debit) (= type :credit)) (assoc :type (name type))
     (number? per-page) (assoc :per_page
